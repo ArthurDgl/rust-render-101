@@ -30,3 +30,5 @@ fn main() {
     Sketch::from_size(640, 480).run();
 }
 ```
+Result :
+![image](https://github.com/user-attachments/assets/415cea00-d80c-4bd5-8d9d-1e6fc950ae78)
