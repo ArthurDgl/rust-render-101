@@ -42,6 +42,8 @@ pub struct Sketch {
     mouse_button: MouseButton,
 
     fill_color: u32,
+    stroke_color: u32,
+    stroke_weight: i8,
 }
 
 impl Sketch {
@@ -66,6 +68,8 @@ impl Sketch {
             mouse_is_pressed: false,
             mouse_button: MouseButton::Left,
             fill_color: 0,
+            stroke_color: 0,
+            stroke_weight: 1,
         }
     }
 
@@ -147,7 +151,7 @@ impl Sketch {
         self.window.set_target_fps(fps);
     }
 
-    fn rbg_color(r: u8, g: u8, b: u8) -> u32 {
+    fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
         ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
@@ -172,15 +176,31 @@ impl Sketch {
     }
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
-        self.pixels[x as usize + y as usize * self.width] = color;
+        let index = x as usize + y as usize * self.width;
+        if index < 0 || index >= self.pixels.len() {
+            return;
+        };
+        self.pixels[index] = color;
     }
 
     fn fill(&mut self, color: u32) {
         self.fill_color = color;
     }
 
+    fn stroke(&mut self, color: u32) {
+        self.stroke_color = color;
+    }
+
+    fn stroke_weight(&mut self, weight: i8) {
+        self.stroke_weight = weight;
+    }
+
     fn fill_pixel(&mut self, x: u32, y: u32) {
          self.set_pixel(x, y, self.fill_color);
+    }
+
+    fn stroke_pixel(&mut self, x: u32, y: u32) {
+        self.set_pixel(x, y, self.stroke_color);
     }
 
     fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
@@ -213,6 +233,101 @@ impl Sketch {
             panic!("Unable to save screenshot : {}", e);
         });
     }
+
+    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
+        for (i, j) in mask {
+            let (xi, yj) = (x + *i as i32, y + *j as i32);
+            if xi > 0 && yj > 0 {
+                self.stroke_pixel(xi as u32, yj as u32);
+            }
+        }
+    }
+
+    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        let dx = x1 - x0;
+        let mut dy = y1 - y0;
+        let mut yi = 1;
+        if dy < 0 {
+            yi = -1;
+            dy = -dy;
+        }
+        let mut delta = 2 * dy - dx;
+        let mut y = y0;
+
+        for x in x0..=x1 {
+            self.bresenham_plot_line_pixel(x, y, mask);
+            if delta > 0 {
+                y += yi;
+                delta += 2 * (dy - dx);
+            }
+            else {
+                delta += 2 * dy;
+            }
+        }
+    }
+
+    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        let mut dx = x1 - x0;
+        let dy = y1 - y0;
+        let mut xi = 1;
+        if dx < 0 {
+            xi = -1;
+            dx = -dx;
+        }
+        let mut delta = 2 * dx - dy;
+        let mut x = x0;
+
+        for y in y0..=y1 {
+            self.bresenham_plot_line_pixel(x, y, mask);
+            if delta > 0 {
+                x += xi;
+                delta += 2 * (dx - dy);
+            }
+            else {
+                delta += 2 * dx;
+            }
+        }
+    }
+
+    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        if (y1 - y0).abs() < (x1 - x0).abs() {
+            if x0 > x1 {
+                self.bresenham_plot_line_low(x1, y1, x0, y0, mask);
+            }
+            else {
+                self.bresenham_plot_line_low(x0, y0, x1, y1, mask);
+            }
+        }
+        else {
+            if y0 > y1 {
+                self.bresenham_plot_line_high(x1, y1, x0, y0, mask);
+            }
+            else {
+                self.bresenham_plot_line_high(x0, y0, x1, y1, mask);
+            }
+        }
+    }
+
+    fn generate_circular_mask(&self) -> Vec<(i8, i8)> {
+        let mut mask: Vec<(i8, i8)> = Vec::new();
+
+        let stroke_weight_sq = self.stroke_weight * self.stroke_weight;
+
+        for x in -self.stroke_weight..=self.stroke_weight {
+            for y in -self.stroke_weight..=self.stroke_weight {
+                if x*x + y*y <= stroke_weight_sq {
+                    mask.push((x, y));
+                }
+            }
+        }
+        mask
+    }
+
+    fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let mask = self.generate_circular_mask();
+
+        self.bresenham_plot_line(x0, y0, x1, y1, &mask);
+    }
 }
 
 
@@ -224,9 +339,6 @@ mod tests {
         fn setup(&mut self) {
             println!("SETUP WAS CALLED");
             self.framerate(60);
-
-            let blue: u32 = Self::rbg_color(50, 50, 255);
-            self.background(blue);
         }
 
         fn draw(&mut self) {
@@ -234,21 +346,28 @@ mod tests {
                 println!("FIRST DRAW CALL");
             }
 
-            let green: u32 = Self::rbg_color(50, 255, 50);
+            let green: u32 = Self::rgb_color(50, 255, 50);
+            let blue: u32 = Self::rgb_color(50, 50, 255);
+
+            self.background(blue);
 
             self.fill(green);
             self.rect(50, 100, 200, 100);
+
+            self.stroke(Self::rgb_color(255, 50, 255));
+            self.stroke_weight(5);
+            self.line(300, 400, self.mouse_x as i32, self.mouse_y as i32);
         }
 
         fn mouse_pressed(&mut self) {
-            let red: u32 = Self::rbg_color(255, 50, 50);
+            let red: u32 = Self::rgb_color(255, 50, 50);
 
             self.rect(self.mouse_x as u32, self.mouse_y as u32, 10, 10);
         }
 
         fn key_pressed(&mut self, key: Key) {
             if key == Key::Space {
-                self.background(Self::rbg_color(0, 0, 0));
+                self.background(Self::rgb_color(0, 0, 0));
             }
             else if key == Key::S {
                 self.save("screenshot.png");
