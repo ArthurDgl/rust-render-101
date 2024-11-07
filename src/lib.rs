@@ -196,12 +196,19 @@ impl SketchGettersSetters for Sketch {
     }
 }
 
+enum StrokeMode {
+    Circle,
+    Square,
+    Custom(fn(&Sketch) -> Vec<(i8, i8)>),
+}
+
 trait SketchPrivateMethods {
     fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>);
     fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
     fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
     fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
     fn generate_circular_mask(&self) -> Vec<(i8, i8)>;
+    fn generate_square_mask(&self) -> Vec<(i8, i8)>;
     fn set_pixel(&mut self, x: u32, y: u32, color: u32);
     fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32);
     fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32);
@@ -297,6 +304,22 @@ impl SketchPrivateMethods for Sketch {
         mask
     }
 
+    fn generate_square_mask(&self) -> Vec<(i8, i8)> {
+        let v1 = -self.stroke_weight;
+        let v2 = self.stroke_weight;
+
+        let mut mask: Vec<(i8, i8)> = Vec::new();
+
+        for v in v1..=v2 {
+            mask.push((v1, v));
+            mask.push((v2, v));
+
+            mask.push((v, v1));
+            mask.push((v, v2));
+        }
+        mask
+    }
+
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
         if index < 0 || index >= self.get_pixels().len() {
@@ -344,6 +367,7 @@ pub struct Sketch {
     fill_color: Option<u32>,
     stroke_color: Option<u32>,
     stroke_weight: i8,
+    stroke_mode: StrokeMode,
 }
 
 impl Sketch {
@@ -370,6 +394,7 @@ impl Sketch {
             fill_color: Some(0),
             stroke_color: Some(0),
             stroke_weight: 1,
+            stroke_mode: StrokeMode::Circle,
         }
     }
 
@@ -429,6 +454,10 @@ impl Sketch {
         self.stroke_weight = weight;
     }
 
+    fn stroke_mode(&mut self, mode: StrokeMode) {
+        self.stroke_mode = mode;
+    }
+
     fn fill_pixel(&mut self, x: u32, y: u32) {
          if let Some(color) = self.fill_color {
              self.set_pixel(x, y, color);
@@ -475,7 +504,11 @@ impl Sketch {
     }
 
     fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
-        let mask = self.generate_circular_mask();
+        let mask = match self.stroke_mode {
+            StrokeMode::Circle => self.generate_circular_mask(),
+            StrokeMode::Square => self.generate_square_mask(),
+            StrokeMode::Custom(mask_func) => mask_func(self),
+        };
 
         self.bresenham_plot_line(x0, y0, x1, y1, &mask);
     }
@@ -506,10 +539,12 @@ mod tests {
             self.fill(green);
             self.stroke(gray);
             self.stroke_weight(2);
+            self.stroke_mode(StrokeMode::Square);
             self.rect(50, 100, 200, 100);
 
             self.stroke(Self::rgb_color(255, 50, 255));
             self.stroke_weight(5);
+            self.stroke_mode(StrokeMode::Circle);
             self.line(300, 400, self.mouse_x as i32, self.mouse_y as i32);
         }
 
