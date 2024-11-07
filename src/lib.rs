@@ -1,4 +1,3 @@
-use minifb;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use image::{ImageBuffer, Rgb};
 
@@ -204,6 +203,8 @@ trait SketchPrivateMethods {
     fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
     fn generate_circular_mask(&self) -> Vec<(i8, i8)>;
     fn set_pixel(&mut self, x: u32, y: u32, color: u32);
+    fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32);
+    fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32);
 }
 
 impl SketchPrivateMethods for Sketch {
@@ -303,6 +304,25 @@ impl SketchPrivateMethods for Sketch {
         };
         self.get_pixels()[index] = color;
     }
+
+    fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        for i in x..(x+w) {
+            for j in y..(y+h) {
+                self.fill_pixel(i, j);
+            }
+        }
+    }
+
+    fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32) {
+        let x = x as i32;
+        let y = y as i32;
+        let w = w as i32;
+        let h = h as i32;
+        self.line(x, y, x+w, y);
+        self.line(x, y, x, y+h);
+        self.line(x, y+h, x+w, y+h);
+        self.line(x+w, y, x+w, y+h);
+    }
 }
 
 pub struct Sketch {
@@ -321,8 +341,8 @@ pub struct Sketch {
     mouse_is_pressed: bool,
     mouse_button: MouseButton,
 
-    fill_color: u32,
-    stroke_color: u32,
+    fill_color: Option<u32>,
+    stroke_color: Option<u32>,
     stroke_weight: i8,
 }
 
@@ -347,8 +367,8 @@ impl Sketch {
             mouse_y: 0.0,
             mouse_is_pressed: false,
             mouse_button: MouseButton::Left,
-            fill_color: 0,
-            stroke_color: 0,
+            fill_color: Some(0),
+            stroke_color: Some(0),
             stroke_weight: 1,
         }
     }
@@ -390,11 +410,19 @@ impl Sketch {
     }
 
     fn fill(&mut self, color: u32) {
-        self.fill_color = color;
+        self.fill_color = Some(color);
+    }
+
+    fn no_fill(&mut self) {
+        self.fill_color = None;
     }
 
     fn stroke(&mut self, color: u32) {
-        self.stroke_color = color;
+        self.stroke_color = Some(color);
+    }
+
+    fn no_stroke(&mut self) {
+        self.stroke_color = None;
     }
 
     fn stroke_weight(&mut self, weight: i8) {
@@ -402,18 +430,23 @@ impl Sketch {
     }
 
     fn fill_pixel(&mut self, x: u32, y: u32) {
-         self.set_pixel(x, y, self.fill_color);
+         if let Some(color) = self.fill_color {
+             self.set_pixel(x, y, color);
+         }
     }
 
     fn stroke_pixel(&mut self, x: u32, y: u32) {
-        self.set_pixel(x, y, self.stroke_color);
+        if let Some(color) = self.stroke_color {
+            self.set_pixel(x, y, color);
+        }
     }
 
     fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
-        for i in x..(x+w) {
-            for j in y..(y+h) {
-                self.fill_pixel(i, j);
-            }
+        if self.fill_color.is_some() {
+            self.rect_fill(x, y, w, h);
+        }
+        if self.stroke_color.is_some() {
+            self.rect_stroke(x, y, w, h);
         }
     }
 
@@ -466,10 +499,13 @@ mod tests {
 
             let green: u32 = Self::rgb_color(50, 255, 50);
             let blue: u32 = Self::rgb_color(50, 50, 255);
+            let gray: u32 = Self::rgb_color(50, 50, 50);
 
             self.background(blue);
 
             self.fill(green);
+            self.stroke(gray);
+            self.stroke_weight(2);
             self.rect(50, 100, 200, 100);
 
             self.stroke(Self::rgb_color(255, 50, 255));
