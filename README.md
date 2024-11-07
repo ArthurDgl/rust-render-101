@@ -54,3 +54,5 @@ fn main() {
 ```
 Result :
 
+
+![image](https://github.com/user-attachments/assets/4f1c1b1c-8194-441c-a4ad-7d9996980f9e)
