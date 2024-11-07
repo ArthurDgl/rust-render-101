@@ -197,6 +197,114 @@ impl SketchGettersSetters for Sketch {
     }
 }
 
+trait SketchPrivateMethods {
+    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>);
+    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
+    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
+    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
+    fn generate_circular_mask(&self) -> Vec<(i8, i8)>;
+    fn set_pixel(&mut self, x: u32, y: u32, color: u32);
+}
+
+impl SketchPrivateMethods for Sketch {
+    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
+        for (i, j) in mask {
+            let (xi, yj) = (x + *i as i32, y + *j as i32);
+            if xi > 0 && yj > 0 {
+                self.stroke_pixel(xi as u32, yj as u32);
+            }
+        }
+    }
+
+    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        let dx = x1 - x0;
+        let mut dy = y1 - y0;
+        let mut yi = 1;
+        if dy < 0 {
+            yi = -1;
+            dy = -dy;
+        }
+        let mut delta = 2 * dy - dx;
+        let mut y = y0;
+
+        for x in x0..=x1 {
+            self.bresenham_plot_line_pixel(x, y, mask);
+            if delta > 0 {
+                y += yi;
+                delta += 2 * (dy - dx);
+            }
+            else {
+                delta += 2 * dy;
+            }
+        }
+    }
+
+    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        let mut dx = x1 - x0;
+        let dy = y1 - y0;
+        let mut xi = 1;
+        if dx < 0 {
+            xi = -1;
+            dx = -dx;
+        }
+        let mut delta = 2 * dx - dy;
+        let mut x = x0;
+
+        for y in y0..=y1 {
+            self.bresenham_plot_line_pixel(x, y, mask);
+            if delta > 0 {
+                x += xi;
+                delta += 2 * (dx - dy);
+            }
+            else {
+                delta += 2 * dx;
+            }
+        }
+    }
+
+    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        if (y1 - y0).abs() < (x1 - x0).abs() {
+            if x0 > x1 {
+                self.bresenham_plot_line_low(x1, y1, x0, y0, mask);
+            }
+            else {
+                self.bresenham_plot_line_low(x0, y0, x1, y1, mask);
+            }
+        }
+        else {
+            if y0 > y1 {
+                self.bresenham_plot_line_high(x1, y1, x0, y0, mask);
+            }
+            else {
+                self.bresenham_plot_line_high(x0, y0, x1, y1, mask);
+            }
+        }
+    }
+
+    fn generate_circular_mask(&self) -> Vec<(i8, i8)> {
+        let mut mask: Vec<(i8, i8)> = Vec::new();
+
+        let stroke_weight_sq = self.stroke_weight * self.stroke_weight;
+
+        for x in -self.stroke_weight..=self.stroke_weight {
+            for y in -self.stroke_weight..=self.stroke_weight {
+                if x * x + y * y <= stroke_weight_sq {
+                    mask.push((x, y));
+                }
+            }
+        }
+        mask
+    }
+
+    fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
+        let index = x as usize + y as usize * self.width;
+        if index < 0 || index >= self.get_pixels().len() {
+            return;
+        };
+        self.get_pixels()[index] = color;
+    }
+}
+
 pub struct Sketch {
     window: minifb::Window,
     pixels: Option<Vec<u32>>,
@@ -281,14 +389,6 @@ impl Sketch {
         color as u8
     }
 
-    fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
-        let index = x as usize + y as usize * self.width;
-        if index < 0 || index >= self.get_pixels().len() {
-            return;
-        };
-        self.get_pixels()[index] = color;
-    }
-
     fn fill(&mut self, color: u32) {
         self.fill_color = color;
     }
@@ -339,95 +439,6 @@ impl Sketch {
         image.save(file_path).unwrap_or_else(|e| {
             panic!("Unable to save screenshot : {}", e);
         });
-    }
-
-    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
-        for (i, j) in mask {
-            let (xi, yj) = (x + *i as i32, y + *j as i32);
-            if xi > 0 && yj > 0 {
-                self.stroke_pixel(xi as u32, yj as u32);
-            }
-        }
-    }
-
-    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
-        let dx = x1 - x0;
-        let mut dy = y1 - y0;
-        let mut yi = 1;
-        if dy < 0 {
-            yi = -1;
-            dy = -dy;
-        }
-        let mut delta = 2 * dy - dx;
-        let mut y = y0;
-
-        for x in x0..=x1 {
-            self.bresenham_plot_line_pixel(x, y, mask);
-            if delta > 0 {
-                y += yi;
-                delta += 2 * (dy - dx);
-            }
-            else {
-                delta += 2 * dy;
-            }
-        }
-    }
-
-    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
-        let mut dx = x1 - x0;
-        let dy = y1 - y0;
-        let mut xi = 1;
-        if dx < 0 {
-            xi = -1;
-            dx = -dx;
-        }
-        let mut delta = 2 * dx - dy;
-        let mut x = x0;
-
-        for y in y0..=y1 {
-            self.bresenham_plot_line_pixel(x, y, mask);
-            if delta > 0 {
-                x += xi;
-                delta += 2 * (dx - dy);
-            }
-            else {
-                delta += 2 * dx;
-            }
-        }
-    }
-
-    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
-        if (y1 - y0).abs() < (x1 - x0).abs() {
-            if x0 > x1 {
-                self.bresenham_plot_line_low(x1, y1, x0, y0, mask);
-            }
-            else {
-                self.bresenham_plot_line_low(x0, y0, x1, y1, mask);
-            }
-        }
-        else {
-            if y0 > y1 {
-                self.bresenham_plot_line_high(x1, y1, x0, y0, mask);
-            }
-            else {
-                self.bresenham_plot_line_high(x0, y0, x1, y1, mask);
-            }
-        }
-    }
-
-    fn generate_circular_mask(&self) -> Vec<(i8, i8)> {
-        let mut mask: Vec<(i8, i8)> = Vec::new();
-
-        let stroke_weight_sq = self.stroke_weight * self.stroke_weight;
-
-        for x in -self.stroke_weight..=self.stroke_weight {
-            for y in -self.stroke_weight..=self.stroke_weight {
-                if x*x + y*y <= stroke_weight_sq {
-                    mask.push((x, y));
-                }
-            }
-        }
-        mask
     }
 
     fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
