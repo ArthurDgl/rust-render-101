@@ -1,5 +1,5 @@
 use minifb;
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use image::{ImageBuffer, Rgb};
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
@@ -23,11 +23,183 @@ pub trait Runnable {
     fn key_released(&mut self, key: Key) {
         // Optional Implementation
     }
+
+    fn handle_mouse(&mut self) where Self: SketchGettersSetters {
+        let (x, y) = self.get_window().get_mouse_pos(MouseMode::Clamp).unwrap();
+        self.set_mouse_xy(x, y);
+
+        let temp = self.get_mouse_is_pressed();
+        if self.get_window().get_mouse_down(MouseButton::Left) {
+            self.set_mouse_is_pressed(true);
+            self.set_mouse_button(MouseButton::Left);
+        }
+        else if self.get_window().get_mouse_down(MouseButton::Right) {
+            self.set_mouse_is_pressed(true);
+            self.set_mouse_button(MouseButton::Right);
+        }
+        else if self.get_window().get_mouse_down(MouseButton::Middle) {
+            self.set_mouse_is_pressed(true);
+            self.set_mouse_button(MouseButton::Middle);
+        }
+        else {
+            if temp {
+                self.mouse_released();
+            }
+            self.set_mouse_is_pressed(false);
+        }
+
+        if !temp && self.get_mouse_is_pressed() {
+            self.mouse_pressed();
+        }
+    }
+
+    fn handle_keys(&mut self) where Self: SketchGettersSetters {
+        let keys_pressed:Vec<Key> = self.get_window().get_keys_pressed(KeyRepeat::No);
+
+        for key in keys_pressed {
+            self.key_pressed(key);
+        }
+
+        let keys_released:Vec<Key> = self.get_window().get_keys_released();
+
+        for key in keys_released {
+            self.key_released(key);
+        }
+    }
+
+    fn run(&mut self) where Self: SketchGettersSetters {
+        self.setup();
+
+        let mut now = std::time::SystemTime::now();
+
+        while self.get_window().is_open() {
+            if self.get_is_looping() {
+                self.set_delta_time(now.elapsed().unwrap().as_secs_f32());
+                now = std::time::SystemTime::now();
+
+                self.handle_mouse();
+                self.handle_keys();
+
+                self.draw();
+            }
+
+            self.update_window();
+
+            if self.get_is_looping() {
+                self.set_frame_count(self.get_frame_count() + 1);
+            }
+        }
+    }
+
+    fn update_window(&mut self) where Self: SketchGettersSetters {
+        let pixels = self.take_pixels();
+        let width = self.get_width();
+        let height = self.get_height();
+
+        self.get_window().update_with_buffer(&pixels, width, height).unwrap();
+        self.restore_pixels(pixels);
+    }
+}
+
+trait SketchGettersSetters {
+    fn get_window(&mut self) -> &mut minifb::Window;
+    fn take_pixels(&mut self) -> Vec<u32>;
+    fn restore_pixels(&mut self, pixels: Vec<u32>);
+    fn get_pixels(&mut self) -> &mut Vec<u32>;
+
+    fn get_width(&self) -> usize;
+    fn get_height(&self) -> usize;
+
+    fn get_is_looping(&self) -> bool;
+    fn get_frame_count(&self) -> u32;
+
+    fn get_mouse_x(&self) -> f32;
+    fn get_mouse_y(&self) -> f32;
+    fn get_mouse_is_pressed(&self) -> bool;
+
+    fn set_mouse_is_pressed(&mut self, value: bool);
+    fn set_mouse_button(&mut self, button: MouseButton);
+
+    fn set_delta_time(&mut self, value: f32);
+    fn set_frame_count(&mut self, value: u32);
+
+    fn set_mouse_xy(&mut self, x: f32, y: f32);
+}
+
+impl SketchGettersSetters for Sketch {
+    fn get_window(&mut self) -> &mut Window {
+        &mut self.window
+    }
+
+    fn take_pixels(&mut self) -> Vec<u32> {
+        self.pixels.take().expect("Pixels must always be set")
+    }
+
+    fn restore_pixels(&mut self, pixels: Vec<u32>) {
+        self.pixels = Some(pixels);
+    }
+
+    fn get_pixels(&mut self) -> &mut Vec<u32> {
+        if let Some(pixels) = self.pixels.as_mut() {
+            pixels
+        }
+        else {
+            panic!("Pixels must always be set");
+        }
+    }
+
+    fn get_width(&self) -> usize {
+        self.width
+    }
+
+    fn get_height(&self) -> usize {
+        self.height
+    }
+
+    fn get_is_looping(&self) -> bool {
+        self.is_looping
+    }
+
+    fn get_frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
+    fn get_mouse_x(&self) -> f32 {
+        self.mouse_x
+    }
+
+    fn get_mouse_y(&self) -> f32 {
+        self.mouse_y
+    }
+
+    fn get_mouse_is_pressed(&self) -> bool {
+        self.mouse_is_pressed
+    }
+
+    fn set_mouse_is_pressed(&mut self, value: bool) {
+        self.mouse_is_pressed = value;
+    }
+
+    fn set_mouse_button(&mut self, button: MouseButton) {
+        self.mouse_button = button;
+    }
+
+    fn set_delta_time(&mut self, value: f32) {
+        self.delta_time = value;
+    }
+
+    fn set_frame_count(&mut self, value: u32) {
+        self.frame_count = value;
+    }
+
+    fn set_mouse_xy(&mut self, x: f32, y: f32) {
+        (self.mouse_x, self.mouse_y) = (x, y);
+    }
 }
 
 pub struct Sketch {
     window: minifb::Window,
-    pixels: Vec<u32>,
+    pixels: Option<Vec<u32>>,
 
     width: usize,
     height: usize,
@@ -53,7 +225,7 @@ impl Sketch {
                 panic!("Unable to open window: {}", e);
             });
 
-        let pixels: Vec<u32> = vec![0; width*height];
+        let pixels: Option<Vec<u32>> = Some(vec![0; width*height]);
 
         Sketch {
             window,
@@ -73,74 +245,8 @@ impl Sketch {
         }
     }
 
-    fn handle_mouse(&mut self) {
-        (self.mouse_x, self.mouse_y) = self.window.get_mouse_pos(MouseMode::Clamp).unwrap();
-
-        let temp = self.mouse_is_pressed;
-        if self.window.get_mouse_down(MouseButton::Left) {
-            self.mouse_is_pressed = true;
-            self.mouse_button = MouseButton::Left;
-        }
-        else if self.window.get_mouse_down(MouseButton::Right) {
-            self.mouse_is_pressed = true;
-            self.mouse_button = MouseButton::Right;
-        }
-        else if self.window.get_mouse_down(MouseButton::Middle) {
-            self.mouse_is_pressed = true;
-            self.mouse_button = MouseButton::Middle;
-        }
-        else {
-            if temp {
-                self.mouse_released();
-            }
-            self.mouse_is_pressed = false;
-        }
-
-        if !temp && self.mouse_is_pressed {
-            self.mouse_pressed();
-        }
-    }
-
     fn key_is_down(&self, key: Key) -> bool{
         self.window.is_key_down(key)
-    }
-
-    fn handle_keys(&mut self) {
-        let keys_pressed:Vec<Key> = self.window.get_keys_pressed(KeyRepeat::No);
-
-        for key in keys_pressed {
-            self.key_pressed(key);
-        }
-
-        let keys_released:Vec<Key> = self.window.get_keys_released();
-
-        for key in keys_released {
-            self.key_released(key);
-        }
-    }
-
-    fn run(&mut self) {
-        self.setup();
-
-        let mut now = std::time::SystemTime::now();
-
-        while self.window.is_open() {
-            if self.is_looping {
-                self.delta_time = now.elapsed().unwrap().as_secs_f32();
-                now = std::time::SystemTime::now();
-
-                self.handle_mouse();
-                self.handle_keys();
-
-                self.draw();
-            }
-
-            self.window.update_with_buffer(&self.pixels, self.width, self.height).unwrap();
-
-            if self.is_looping {
-                self.frame_count += 1;
-            }
-        }
     }
 
     fn no_loop(&mut self) {
@@ -177,10 +283,10 @@ impl Sketch {
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
-        if index < 0 || index >= self.pixels.len() {
+        if index < 0 || index >= self.get_pixels().len() {
             return;
         };
-        self.pixels[index] = color;
+        self.get_pixels()[index] = color;
     }
 
     fn fill(&mut self, color: u32) {
@@ -219,12 +325,13 @@ impl Sketch {
         }
     }
 
-    fn save(&self, file_path: &str) {
+    fn save(&mut self, file_path: &str) {
         let mut image = ImageBuffer::new(self.width as u32, self.height as u32);
 
         for x in 0..self.width as u32 {
             for y in 0..self.height as u32 {
-                let pixel: u32 = self.pixels[x as usize + y as usize * self.width];
+                let width = self.width;
+                let pixel: u32 = self.get_pixels()[x as usize + y as usize * width];
                 image.put_pixel(x, y, Rgb([Self::color_red(pixel), Self::color_green(pixel), Self::color_blue(pixel)]));
             }
         }
