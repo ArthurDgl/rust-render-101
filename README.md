@@ -22,9 +22,9 @@ fn draw(sketch: &mut Sketch<MyState>) {
         println!("FIRST DRAW CALL");
     }
 
-    let green: u32 = Sketch::<MyState>::rgb_color(50, 255, 50);
-    let blue: u32 = Sketch::<MyState>::rgb_color(50, 50, 255);
-    let gray: u32 = Sketch::<MyState>::rgb_color(50, 50, 50);
+    let green: u32 = RgbaColor::rgb_color(50, 255, 50);
+    let blue: u32 = RgbaColor::rgb_color(50, 50, 255);
+    let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
     sketch.background(blue);
 
@@ -34,7 +34,7 @@ fn draw(sketch: &mut Sketch<MyState>) {
     sketch.stroke_mode(StrokeMode::Square);
     sketch.rect(50, 100, 200, 100);
 
-    sketch.stroke(Sketch::<MyState>::rgb_color(255, 50, 255));
+    sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
     sketch.stroke_weight(5);
     sketch.stroke_mode(StrokeMode::Circle);
     sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
@@ -52,7 +52,7 @@ fn mouse_pressed(sketch: &mut Sketch<MyState>) {
 
 fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
     if key == Key::Space {
-        sketch.background(Sketch::<MyState>::rgb_color(0, 0, 0));
+        sketch.background(RgbaColor::rgb_color(0, 0, 0));
     } else if key == Key::S {
         sketch.save("screenshot.png");
     }
