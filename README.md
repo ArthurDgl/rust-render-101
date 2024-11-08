@@ -59,12 +59,7 @@ fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
 }
 
 fn main() {
-    let mut state = MyState {
-        line_x1: 0,
-        line_y1: 0,
-        line_x2: 0,
-        line_y2: 0,
-    };
+    let mut state = MyState::default();
     let mut sketch = Sketch::<MyState>::from_size(640, 480, state);
 
     sketch.setup_method = Some(setup);
