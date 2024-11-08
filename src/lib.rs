@@ -209,13 +209,13 @@ impl<S: State> Sketch<S> {
     fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
         for (i, j) in mask {
             let (xi, yj) = (x + *i as i32, y + *j as i32);
-            if xi > 0 && yj > 0 {
+            if xi >= 0 && yj >= 0 {
                 self.stroke_pixel(xi as u32, yj as u32);
             }
         }
     }
 
-    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
         let dx = x1 - x0;
         let mut dy = y1 - y0;
         let mut yi = 1;
@@ -226,8 +226,10 @@ impl<S: State> Sketch<S> {
         let mut delta = 2 * dy - dx;
         let mut y = y0;
 
+        let mut result: Vec<(i32, i32)> = vec![];
+
         for x in x0..=x1 {
-            self.bresenham_plot_line_pixel(x, y, mask);
+            result.push((x, y));
             if delta > 0 {
                 y += yi;
                 delta += 2 * (dy - dx);
@@ -236,9 +238,10 @@ impl<S: State> Sketch<S> {
                 delta += 2 * dy;
             }
         }
+        result
     }
 
-    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
         let mut dx = x1 - x0;
         let dy = y1 - y0;
         let mut xi = 1;
@@ -249,8 +252,10 @@ impl<S: State> Sketch<S> {
         let mut delta = 2 * dx - dy;
         let mut x = x0;
 
+        let mut result: Vec<(i32, i32)> = vec![];
+
         for y in y0..=y1 {
-            self.bresenham_plot_line_pixel(x, y, mask);
+            result.push((x, y));
             if delta > 0 {
                 x += xi;
                 delta += 2 * (dx - dy);
@@ -259,24 +264,36 @@ impl<S: State> Sketch<S> {
                 delta += 2 * dx;
             }
         }
+        result
     }
 
-    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
+        let points_to_plot: Vec<(i32, i32)>;
+
         if (y1 - y0).abs() < (x1 - x0).abs() {
             if x0 > x1 {
-                self.bresenham_plot_line_low(x1, y1, x0, y0, mask);
+                points_to_plot = self.bresenham_plot_line_low(x1, y1, x0, y0);
             }
             else {
-                self.bresenham_plot_line_low(x0, y0, x1, y1, mask);
+                points_to_plot = self.bresenham_plot_line_low(x0, y0, x1, y1);
             }
         }
         else {
             if y0 > y1 {
-                self.bresenham_plot_line_high(x1, y1, x0, y0, mask);
+                points_to_plot = self.bresenham_plot_line_high(x1, y1, x0, y0);
             }
             else {
-                self.bresenham_plot_line_high(x0, y0, x1, y1, mask);
+                points_to_plot = self.bresenham_plot_line_high(x0, y0, x1, y1);
             }
+        }
+        points_to_plot
+    }
+
+    fn bresenham_plot_line_mask(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+        let points_to_plot = self.bresenham_plot_line(x0, y0, x1, y1);
+
+        for point in points_to_plot {
+            self.bresenham_plot_line_pixel(point.0, point.1, mask);
         }
     }
 
@@ -309,6 +326,93 @@ impl<S: State> Sketch<S> {
             mask.push((v, v2));
         }
         mask
+    }
+
+    fn triangle_flat_top(&mut self, x0: i32, y0: i32, base: i32, x1: i32, y1: i32) {
+        let left_edge = self.bresenham_plot_line(x0, y0, x1, y1);
+        let right_edge = self.bresenham_plot_line(x0 + base, y0, x1, y1);
+
+        let mut max_right_x: Vec<i32> = vec![i32::MIN; (y1 - y0 + 1) as usize];
+        let mut min_left_x: Vec<i32> = vec![i32::MAX; (y1 - y0 + 1) as usize];
+
+        for (x, y) in right_edge {
+            let i = (y - y0) as usize;
+            if x > max_right_x[i] {
+                max_right_x[i] = x;
+            }
+        }
+        for (x, y) in left_edge {
+            let i = (y - y0) as usize;
+            if x < min_left_x[i] {
+                min_left_x[i] = x;
+            }
+        }
+
+        for i in 0..max_right_x.len() {
+            let y = i as i32 + y0;
+            for x in min_left_x[i]..=max_right_x[i] {
+                if x >= 0 && y >= 0 {
+                    self.set_pixel(x as u32, y as u32, self.fill_color.expect(""));
+                }
+            }
+        }
+    }
+
+    fn triangle_flat_bottom(&mut self, x0: i32, y0: i32, base: i32, x1: i32, y1: i32) {
+        let left_edge = self.bresenham_plot_line(x1, y1, x0, y0);
+        let right_edge = self.bresenham_plot_line(x1, y1, x0 + base, y0);
+
+        let mut max_right_x: Vec<i32> = vec![i32::MIN; (y0 - y1 + 1) as usize];
+        let mut min_left_x: Vec<i32> = vec![i32::MAX; (y0 - y1 + 1) as usize];
+
+        for (x, y) in right_edge {
+            let i = (y - y1) as usize;
+            if x > max_right_x[i] {
+                max_right_x[i] = x;
+            }
+        }
+        for (x, y) in left_edge {
+            let i = (y - y1) as usize;
+            if x < min_left_x[i] {
+                min_left_x[i] = x;
+            }
+        }
+
+        for i in 0..max_right_x.len() {
+            let y = i as i32 + y1;
+            for x in min_left_x[i]..=max_right_x[i] {
+                if x >= 0 && y >= 0 {
+                    self.set_pixel(x as u32, y as u32, self.fill_color.expect(""));
+                }
+            }
+        }
+    }
+
+    fn triangle_fill(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+        let mut triangle = [(x0, y0), (x1, y1), (x2, y2)];
+        triangle.sort_by(|&(_, y1), &(_, y2)| y2.cmp(&y1));
+
+        let x_project = f32::round(
+            (triangle[1].1 - triangle[2].1) as f32
+                * ((triangle[2].0 - triangle[0].0) as f32 / (triangle[2].1 - triangle[0].1) as f32)
+                + triangle[2].0 as f32
+        ) as i32;
+
+        let mut x_start = x_project;
+        let mut base = triangle[1].0 - x_project;
+        if triangle[1].0 < x_project {
+            x_start = triangle[1].0;
+            base = -base;
+        }
+
+        self.triangle_flat_bottom(x_start, triangle[1].1, base, triangle[2].0, triangle[2].1);
+        self.triangle_flat_top(x_start, triangle[1].1, base, triangle[0].0, triangle[0].1);
+    }
+
+    fn triangle_stroke(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+        self.line(x0, y0, x1, y1);
+        self.line(x0, y0, x2, y2);
+        self.line(x2, y2, x1, y1);
     }
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
@@ -401,6 +505,15 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    pub fn triangle(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
+        if self.fill_color.is_some() {
+            self.triangle_fill(x0, y0, x1, y1, x2, y2);
+        }
+        if self.stroke_color.is_some() {
+            self.triangle_stroke(x0, y0, x1, y1, x2, y2);
+        }
+    }
+
     pub fn background(&mut self, color: u32) {
         for i in 0..self.width as u32 {
             for j in 0..self.height as u32 {
@@ -431,7 +544,7 @@ impl<S: State> Sketch<S> {
             StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
         };
 
-        self.bresenham_plot_line(x0, y0, x1, y1, &mask);
+        self.bresenham_plot_line_mask(x0, y0, x1, y1, &mask);
     }
 }
 
@@ -472,6 +585,12 @@ mod tests {
         sketch.stroke_weight(2);
         sketch.stroke_mode(StrokeMode::Square);
         sketch.rect(50, 100, 200, 100);
+
+        sketch.fill(gray);
+        sketch.stroke(green);
+        sketch.stroke_weight(3);
+        sketch.stroke_mode(StrokeMode::Circle);
+        sketch.triangle(350, 50, 450, 150, 300, 300);
 
         sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
         sketch.stroke_weight(5);

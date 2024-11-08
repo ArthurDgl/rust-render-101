@@ -35,6 +35,12 @@ fn draw(sketch: &mut Sketch<MyState>) {
     sketch.stroke_mode(StrokeMode::Square);
     sketch.rect(50, 100, 200, 100);
 
+    sketch.fill(gray);
+    sketch.stroke(green);
+    sketch.stroke_weight(3);
+    sketch.stroke_mode(StrokeMode::Circle);
+    sketch.triangle(350, 50, 450, 150, 300, 300);
+
     sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
     sketch.stroke_weight(5);
     sketch.stroke_mode(StrokeMode::Circle);
