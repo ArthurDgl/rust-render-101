@@ -1,5 +1,6 @@
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use image::{ImageBuffer, Rgb};
+use image::error::UnsupportedErrorKind::Color;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -7,6 +8,38 @@ pub enum StrokeMode{
     Circle,
     Square,
     Custom(fn(i8) -> Vec<(i8, i8)>),
+}
+
+pub struct RgbaColor {}
+
+impl RgbaColor {
+    pub fn greyscale_color(g: u8) -> u32 {
+        ((g as u32) << 16) | ((g as u32) << 8) | g as u32
+    }
+
+    pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
+        ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+    }
+
+    pub fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
+        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+    }
+
+    pub fn color_alpha(color: u32) -> u8 {
+        (color >> 24) as u8
+    }
+
+    pub fn color_red(color: u32) -> u8 {
+        (color >> 16) as u8
+    }
+
+    pub fn color_green(color: u32) -> u8 {
+        (color >> 8) as u8
+    }
+
+    pub fn color_blue(color: u32) -> u8 {
+        color as u8
+    }
 }
 
 pub trait State : Default {}
@@ -300,30 +333,6 @@ impl<S: State> Sketch<S> {
         self.window.set_target_fps(fps);
     }
 
-    pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
-        ((r as u32) << 16) | ((g as u32) << 8) | b as u32
-    }
-
-    pub fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
-        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
-    }
-
-    pub fn color_alpha(color: u32) -> u8 {
-        (color >> 24) as u8
-    }
-
-    pub fn color_red(color: u32) -> u8 {
-        (color >> 16) as u8
-    }
-
-    pub fn color_green(color: u32) -> u8 {
-        (color >> 8) as u8
-    }
-
-    pub fn color_blue(color: u32) -> u8 {
-        color as u8
-    }
-
     pub fn fill(&mut self, color: u32) {
         self.fill_color = Some(color);
     }
@@ -383,7 +392,7 @@ impl<S: State> Sketch<S> {
         for x in 0..self.width as u32 {
             for y in 0..self.height as u32 {
                 let pixel: u32 = self.pixels[x as usize + y as usize * self.width];
-                image.put_pixel(x, y, Rgb([Self::color_red(pixel), Self::color_green(pixel), Self::color_blue(pixel)]));
+                image.put_pixel(x, y, Rgb([RgbaColor::color_red(pixel), RgbaColor::color_green(pixel), RgbaColor::color_blue(pixel)]));
             }
         }
 
@@ -428,9 +437,9 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
-        let green: u32 = Sketch::<MyState>::rgb_color(50, 255, 50);
-        let blue: u32 = Sketch::<MyState>::rgb_color(50, 50, 255);
-        let gray: u32 = Sketch::<MyState>::rgb_color(50, 50, 50);
+        let green: u32 = RgbaColor::rgb_color(50, 255, 50);
+        let blue: u32 = RgbaColor::rgb_color(50, 50, 255);
+        let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
         sketch.background(blue);
 
@@ -440,7 +449,7 @@ mod tests {
         sketch.stroke_mode(StrokeMode::Square);
         sketch.rect(50, 100, 200, 100);
 
-        sketch.stroke(Sketch::<MyState>::rgb_color(255, 50, 255));
+        sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
         sketch.stroke_weight(5);
         sketch.stroke_mode(StrokeMode::Circle);
         sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
@@ -458,7 +467,7 @@ mod tests {
 
     fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
         if key == Key::Space {
-            sketch.background(Sketch::<MyState>::rgb_color(0, 0, 0));
+            sketch.background(RgbaColor::rgb_color(0, 0, 0));
         } else if key == Key::S {
             sketch.save("screenshot.png");
         }
