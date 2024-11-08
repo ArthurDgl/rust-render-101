@@ -8,6 +8,7 @@ struct MyState {
     line_y1: i32,
     line_x2: i32,
     line_y2: i32,
+    background_color: u32,
 }
 
 impl State for MyState {}
@@ -15,6 +16,7 @@ impl State for MyState {}
 fn setup(sketch: &mut Sketch<MyState>) {
     println!("SETUP WAS CALLED");
     sketch.framerate(60);
+    sketch.name("Example Sketch")
 }
 
 fn draw(sketch: &mut Sketch<MyState>) {
@@ -23,10 +25,9 @@ fn draw(sketch: &mut Sketch<MyState>) {
     }
 
     let green: u32 = RgbaColor::rgb_color(50, 255, 50);
-    let blue: u32 = RgbaColor::rgb_color(50, 50, 255);
     let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
-    sketch.background(blue);
+    sketch.background(sketch.state.background_color);
 
     sketch.fill(green);
     sketch.stroke(gray);
@@ -52,7 +53,7 @@ fn mouse_pressed(sketch: &mut Sketch<MyState>) {
 
 fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
     if key == Key::Space {
-        sketch.background(RgbaColor::rgb_color(0, 0, 0));
+        sketch.state.background_color = RgbaColor::random_rgb_color();
     } else if key == Key::S {
         sketch.save("screenshot.png");
     }
@@ -60,6 +61,7 @@ fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
 
 fn main() {
     let mut state = MyState::default();
+    state.background_color = RgbaColor::random_rgb_color();
     let mut sketch = Sketch::<MyState>::from_size(640, 480, state);
 
     sketch.setup_method = Some(setup);

@@ -1,6 +1,7 @@
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use image::{ImageBuffer, Rgb};
 use image::error::UnsupportedErrorKind::Color;
+use rand;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -13,6 +14,16 @@ pub enum StrokeMode{
 pub struct RgbaColor {}
 
 impl RgbaColor {
+    pub fn random_rgb_color() -> u32 {
+        let mask: u32 = !(255u32 << 24);
+
+        mask & rand::random::<u32>()
+    }
+
+    pub fn random_rgba_color() -> u32 {
+        rand::random::<u32>()
+    }
+
     pub fn greyscale_color(g: u8) -> u32 {
         ((g as u32) << 16) | ((g as u32) << 8) | g as u32
     }
@@ -39,6 +50,14 @@ impl RgbaColor {
 
     pub fn color_blue(color: u32) -> u8 {
         color as u8
+    }
+}
+
+pub struct Geometry {}
+
+impl Geometry {
+    pub fn random(lower: f32, upper: f32) -> f32 {
+        lower + rand::random::<f32>() * (upper - lower)
     }
 }
 
@@ -321,6 +340,10 @@ impl<S: State> Sketch<S> {
 
     // Public Methods
 
+    pub fn name(&mut self, name: &str) {
+        self.window.set_title(name);
+    }
+
     pub fn key_is_down(&self, key: Key) -> bool{
         self.window.is_key_down(key)
     }
@@ -423,6 +446,7 @@ mod tests {
         line_y1: i32,
         line_x2: i32,
         line_y2: i32,
+        background_color: u32,
     }
 
     impl State for MyState {}
@@ -430,6 +454,7 @@ mod tests {
     fn setup(sketch: &mut Sketch<MyState>) {
         println!("SETUP WAS CALLED");
         sketch.framerate(60);
+        sketch.name("Example Sketch")
     }
 
     fn draw(sketch: &mut Sketch<MyState>) {
@@ -438,10 +463,9 @@ mod tests {
         }
 
         let green: u32 = RgbaColor::rgb_color(50, 255, 50);
-        let blue: u32 = RgbaColor::rgb_color(50, 50, 255);
         let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
-        sketch.background(blue);
+        sketch.background(sketch.state.background_color);
 
         sketch.fill(green);
         sketch.stroke(gray);
@@ -467,7 +491,7 @@ mod tests {
 
     fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
         if key == Key::Space {
-            sketch.background(RgbaColor::rgb_color(0, 0, 0));
+            sketch.state.background_color = RgbaColor::random_rgb_color();
         } else if key == Key::S {
             sketch.save("screenshot.png");
         }
@@ -475,7 +499,8 @@ mod tests {
 
     #[test]
     fn testing() {
-        let state = MyState::default();
+        let mut state = MyState::default();
+        state.background_color = RgbaColor::random_rgb_color();
         let mut sketch = Sketch::<MyState>::from_size(640, 480, state);
 
         sketch.setup_method = Some(setup);
