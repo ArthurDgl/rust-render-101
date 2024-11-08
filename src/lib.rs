@@ -3,218 +3,147 @@ use image::{ImageBuffer, Rgb};
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
-pub trait Runnable {
-    fn setup(&mut self);
-    fn draw(&mut self);
-
-    fn mouse_pressed(&mut self) {
-        // Optional Implementation
-    }
-
-    fn mouse_released(&mut self) {
-        // Optional Implementation
-    }
-
-    fn key_pressed(&mut self, key: Key) {
-        // Optional Implementation
-    }
-
-    fn key_released(&mut self, key: Key) {
-        // Optional Implementation
-    }
-
-    fn handle_mouse(&mut self) where Self: SketchGettersSetters {
-        let (x, y) = self.get_window().get_mouse_pos(MouseMode::Clamp).unwrap();
-        self.set_mouse_xy(x, y);
-
-        let temp = self.get_mouse_is_pressed();
-        if self.get_window().get_mouse_down(MouseButton::Left) {
-            self.set_mouse_is_pressed(true);
-            self.set_mouse_button(MouseButton::Left);
-        }
-        else if self.get_window().get_mouse_down(MouseButton::Right) {
-            self.set_mouse_is_pressed(true);
-            self.set_mouse_button(MouseButton::Right);
-        }
-        else if self.get_window().get_mouse_down(MouseButton::Middle) {
-            self.set_mouse_is_pressed(true);
-            self.set_mouse_button(MouseButton::Middle);
-        }
-        else {
-            if temp {
-                self.mouse_released();
-            }
-            self.set_mouse_is_pressed(false);
-        }
-
-        if !temp && self.get_mouse_is_pressed() {
-            self.mouse_pressed();
-        }
-    }
-
-    fn handle_keys(&mut self) where Self: SketchGettersSetters {
-        let keys_pressed:Vec<Key> = self.get_window().get_keys_pressed(KeyRepeat::No);
-
-        for key in keys_pressed {
-            self.key_pressed(key);
-        }
-
-        let keys_released:Vec<Key> = self.get_window().get_keys_released();
-
-        for key in keys_released {
-            self.key_released(key);
-        }
-    }
-
-    fn run(&mut self) where Self: SketchGettersSetters {
-        self.setup();
-
-        let mut now = std::time::SystemTime::now();
-
-        while self.get_window().is_open() {
-            if self.get_is_looping() {
-                self.set_delta_time(now.elapsed().unwrap().as_secs_f32());
-                now = std::time::SystemTime::now();
-
-                self.handle_mouse();
-                self.handle_keys();
-
-                self.draw();
-            }
-
-            self.update_window();
-
-            if self.get_is_looping() {
-                self.set_frame_count(self.get_frame_count() + 1);
-            }
-        }
-    }
-
-    fn update_window(&mut self) where Self: SketchGettersSetters {
-        let pixels = self.take_pixels();
-        let width = self.get_width();
-        let height = self.get_height();
-
-        self.get_window().update_with_buffer(&pixels, width, height).unwrap();
-        self.restore_pixels(pixels);
-    }
-}
-
-trait SketchGettersSetters {
-    fn get_window(&mut self) -> &mut minifb::Window;
-    fn take_pixels(&mut self) -> Vec<u32>;
-    fn restore_pixels(&mut self, pixels: Vec<u32>);
-    fn get_pixels(&mut self) -> &mut Vec<u32>;
-
-    fn get_width(&self) -> usize;
-    fn get_height(&self) -> usize;
-
-    fn get_is_looping(&self) -> bool;
-    fn get_frame_count(&self) -> u32;
-
-    fn get_mouse_x(&self) -> f32;
-    fn get_mouse_y(&self) -> f32;
-    fn get_mouse_is_pressed(&self) -> bool;
-
-    fn set_mouse_is_pressed(&mut self, value: bool);
-    fn set_mouse_button(&mut self, button: MouseButton);
-
-    fn set_delta_time(&mut self, value: f32);
-    fn set_frame_count(&mut self, value: u32);
-
-    fn set_mouse_xy(&mut self, x: f32, y: f32);
-}
-
-impl SketchGettersSetters for Sketch {
-    fn get_window(&mut self) -> &mut Window {
-        &mut self.window
-    }
-
-    fn take_pixels(&mut self) -> Vec<u32> {
-        self.pixels.take().expect("Pixels must always be set")
-    }
-
-    fn restore_pixels(&mut self, pixels: Vec<u32>) {
-        self.pixels = Some(pixels);
-    }
-
-    fn get_pixels(&mut self) -> &mut Vec<u32> {
-        if let Some(pixels) = self.pixels.as_mut() {
-            pixels
-        }
-        else {
-            panic!("Pixels must always be set");
-        }
-    }
-
-    fn get_width(&self) -> usize {
-        self.width
-    }
-
-    fn get_height(&self) -> usize {
-        self.height
-    }
-
-    fn get_is_looping(&self) -> bool {
-        self.is_looping
-    }
-
-    fn get_frame_count(&self) -> u32 {
-        self.frame_count
-    }
-
-    fn get_mouse_x(&self) -> f32 {
-        self.mouse_x
-    }
-
-    fn get_mouse_y(&self) -> f32 {
-        self.mouse_y
-    }
-
-    fn get_mouse_is_pressed(&self) -> bool {
-        self.mouse_is_pressed
-    }
-
-    fn set_mouse_is_pressed(&mut self, value: bool) {
-        self.mouse_is_pressed = value;
-    }
-
-    fn set_mouse_button(&mut self, button: MouseButton) {
-        self.mouse_button = button;
-    }
-
-    fn set_delta_time(&mut self, value: f32) {
-        self.delta_time = value;
-    }
-
-    fn set_frame_count(&mut self, value: u32) {
-        self.frame_count = value;
-    }
-
-    fn set_mouse_xy(&mut self, x: f32, y: f32) {
-        (self.mouse_x, self.mouse_y) = (x, y);
-    }
-}
-
-enum StrokeMode {
+pub enum StrokeMode {
     Circle,
     Square,
     Custom(fn(&Sketch) -> Vec<(i8, i8)>),
 }
 
-trait SketchPrivateMethods {
-    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>);
-    fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
-    fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
-    fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>);
-    fn generate_circular_mask(&self) -> Vec<(i8, i8)>;
-    fn generate_square_mask(&self) -> Vec<(i8, i8)>;
-    fn set_pixel(&mut self, x: u32, y: u32, color: u32);
-    fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32);
-    fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32);
+pub struct Sketch {
+    window: minifb::Window,
+    pixels: Vec<u32>,
+
+    pub width: usize,
+    pub height: usize,
+
+    pub is_looping: bool,
+    pub frame_count: u32,
+    pub delta_time: f32,
+
+    pub mouse_x: f32,
+    pub mouse_y: f32,
+    pub mouse_is_pressed: bool,
+    pub mouse_button: MouseButton,
+
+    fill_color: Option<u32>,
+    stroke_color: Option<u32>,
+    stroke_weight: i8,
+    stroke_mode: StrokeMode,
+
+    pub draw_method: fn(&mut Self),
+    pub setup_method: fn(&mut Self),
+    pub mouse_pressed_method: fn(&mut Self),
+    pub mouse_released_method: fn(&mut Self),
+    pub key_pressed_method: fn(&mut Self, Key),
+    pub key_released_method: fn(&mut Self, Key),
 }
 
-impl SketchPrivateMethods for Sketch {
+impl Sketch {
+    pub fn from_size(width: usize, height: usize) -> Sketch {
+        let window = minifb::Window::new(DEFAULT_NAME, width, height, minifb::WindowOptions::default())
+            .unwrap_or_else(|e| {
+                panic!("Unable to open window: {}", e);
+            });
+
+        let pixels: Vec<u32> = vec![0; width*height];
+
+        let simple_method = |_: &mut Self| {};
+        let key_method = |_: &mut Self, _: Key| {};
+
+        Sketch {
+            window,
+            pixels,
+            width,
+            height,
+            is_looping: true,
+            frame_count: 0,
+            delta_time: 0.0,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
+            mouse_is_pressed: false,
+            mouse_button: MouseButton::Left,
+            fill_color: Some(0),
+            stroke_color: Some(0),
+            stroke_weight: 1,
+            stroke_mode: StrokeMode::Circle,
+
+            draw_method: simple_method.clone(),
+            setup_method: simple_method.clone(),
+            mouse_pressed_method: simple_method.clone(),
+            mouse_released_method: simple_method.clone(),
+            key_pressed_method: key_method.clone(),
+            key_released_method: key_method.clone(),
+        }
+    }
+
+    // Private Methods
+
+    fn handle_mouse(&mut self) {
+        (self.mouse_x, self.mouse_y) = self.window.get_mouse_pos(MouseMode::Clamp).unwrap();
+
+        let temp = self.mouse_is_pressed;
+        if self.window.get_mouse_down(MouseButton::Left) {
+            self.mouse_is_pressed = true;
+            self.mouse_button = MouseButton::Left;
+        }
+        else if self.window.get_mouse_down(MouseButton::Right) {
+            self.mouse_is_pressed = true;
+            self.mouse_button = MouseButton::Right;
+        }
+        else if self.window.get_mouse_down(MouseButton::Middle) {
+            self.mouse_is_pressed = true;
+            self.mouse_button = MouseButton::Middle;
+        }
+        else {
+            if temp {
+                (self.mouse_released_method)(self);
+            }
+            self.mouse_is_pressed = false;
+        }
+
+        if !temp && self.mouse_is_pressed {
+            (self.mouse_pressed_method)(self);
+        }
+    }
+
+    fn handle_keys(&mut self) {
+        let keys_pressed:Vec<Key> = self.window.get_keys_pressed(KeyRepeat::No);
+
+        for key in keys_pressed {
+            (self.key_pressed_method)(self, key);
+        }
+
+        let keys_released:Vec<Key> = self.window.get_keys_released();
+
+        for key in keys_released {
+            (self.key_released_method)(self, key);
+        }
+    }
+
+    fn run(&mut self) {
+        (self.setup_method)(self);
+
+        let mut now = std::time::SystemTime::now();
+
+        while self.window.is_open() {
+            if self.is_looping {
+                self.delta_time = now.elapsed().unwrap().as_secs_f32();
+                now = std::time::SystemTime::now();
+
+                self.handle_mouse();
+                self.handle_keys();
+
+                (self.draw_method)(self);
+            }
+
+            self.window.update_with_buffer(&self.pixels, self.width, self.height).unwrap();
+
+            if self.is_looping {
+                self.frame_count = self.frame_count + 1;
+            }
+        }
+    }
+
     fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
         for (i, j) in mask {
             let (xi, yj) = (x + *i as i32, y + *j as i32);
@@ -322,10 +251,10 @@ impl SketchPrivateMethods for Sketch {
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
-        if index < 0 || index >= self.get_pixels().len() {
+        if index < 0 || index >= self.pixels.len() {
             return;
         };
-        self.get_pixels()[index] = color;
+        self.pixels[index] = color;
     }
 
     fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32) {
@@ -346,131 +275,82 @@ impl SketchPrivateMethods for Sketch {
         self.line(x, y+h, x+w, y+h);
         self.line(x+w, y, x+w, y+h);
     }
-}
 
-pub struct Sketch {
-    window: minifb::Window,
-    pixels: Option<Vec<u32>>,
+    // Public Methods
 
-    width: usize,
-    height: usize,
-
-    is_looping: bool,
-    frame_count: u32,
-    delta_time: f32,
-
-    mouse_x: f32,
-    mouse_y: f32,
-    mouse_is_pressed: bool,
-    mouse_button: MouseButton,
-
-    fill_color: Option<u32>,
-    stroke_color: Option<u32>,
-    stroke_weight: i8,
-    stroke_mode: StrokeMode,
-}
-
-impl Sketch {
-    fn from_size(width: usize, height: usize) -> Sketch {
-        let window = minifb::Window::new(DEFAULT_NAME, width, height, minifb::WindowOptions::default())
-            .unwrap_or_else(|e| {
-                panic!("Unable to open window: {}", e);
-            });
-
-        let pixels: Option<Vec<u32>> = Some(vec![0; width*height]);
-
-        Sketch {
-            window,
-            pixels,
-            width,
-            height,
-            is_looping: true,
-            frame_count: 0,
-            delta_time: 0.0,
-            mouse_x: 0.0,
-            mouse_y: 0.0,
-            mouse_is_pressed: false,
-            mouse_button: MouseButton::Left,
-            fill_color: Some(0),
-            stroke_color: Some(0),
-            stroke_weight: 1,
-            stroke_mode: StrokeMode::Circle,
-        }
-    }
-
-    fn key_is_down(&self, key: Key) -> bool{
+    pub fn key_is_down(&self, key: Key) -> bool{
         self.window.is_key_down(key)
     }
 
-    fn no_loop(&mut self) {
+    pub fn no_loop(&mut self) {
         self.is_looping = false;
     }
 
-    fn framerate(&mut self, fps: usize) {
+    pub fn framerate(&mut self, fps: usize) {
         self.window.set_target_fps(fps);
     }
 
-    fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
+    pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
         ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
-    fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
+    pub fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
-    fn color_alpha(color: u32) -> u8 {
+    pub fn color_alpha(color: u32) -> u8 {
         (color >> 24) as u8
     }
 
-    fn color_red(color: u32) -> u8 {
+    pub fn color_red(color: u32) -> u8 {
         (color >> 16) as u8
     }
 
-    fn color_green(color: u32) -> u8 {
+    pub fn color_green(color: u32) -> u8 {
         (color >> 8) as u8
     }
 
-    fn color_blue(color: u32) -> u8 {
+    pub fn color_blue(color: u32) -> u8 {
         color as u8
     }
 
-    fn fill(&mut self, color: u32) {
+    pub fn fill(&mut self, color: u32) {
         self.fill_color = Some(color);
     }
 
-    fn no_fill(&mut self) {
+    pub fn no_fill(&mut self) {
         self.fill_color = None;
     }
 
-    fn stroke(&mut self, color: u32) {
+    pub fn stroke(&mut self, color: u32) {
         self.stroke_color = Some(color);
     }
 
-    fn no_stroke(&mut self) {
+    pub fn no_stroke(&mut self) {
         self.stroke_color = None;
     }
 
-    fn stroke_weight(&mut self, weight: i8) {
+    pub fn stroke_weight(&mut self, weight: i8) {
         self.stroke_weight = weight;
     }
 
-    fn stroke_mode(&mut self, mode: StrokeMode) {
+    pub fn stroke_mode(&mut self, mode: StrokeMode) {
         self.stroke_mode = mode;
     }
 
-    fn fill_pixel(&mut self, x: u32, y: u32) {
+    pub fn fill_pixel(&mut self, x: u32, y: u32) {
          if let Some(color) = self.fill_color {
              self.set_pixel(x, y, color);
          }
     }
 
-    fn stroke_pixel(&mut self, x: u32, y: u32) {
+    pub fn stroke_pixel(&mut self, x: u32, y: u32) {
         if let Some(color) = self.stroke_color {
             self.set_pixel(x, y, color);
         }
     }
 
-    fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
+    pub fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
         if self.fill_color.is_some() {
             self.rect_fill(x, y, w, h);
         }
@@ -479,7 +359,7 @@ impl Sketch {
         }
     }
 
-    fn background(&mut self, color: u32) {
+    pub fn background(&mut self, color: u32) {
         for i in 0..self.width as u32 {
             for j in 0..self.height as u32 {
                 self.set_pixel(i, j, color);
@@ -487,13 +367,12 @@ impl Sketch {
         }
     }
 
-    fn save(&mut self, file_path: &str) {
+    pub fn save(&mut self, file_path: &str) {
         let mut image = ImageBuffer::new(self.width as u32, self.height as u32);
 
         for x in 0..self.width as u32 {
             for y in 0..self.height as u32 {
-                let width = self.width;
-                let pixel: u32 = self.get_pixels()[x as usize + y as usize * width];
+                let pixel: u32 = self.pixels[x as usize + y as usize * self.width];
                 image.put_pixel(x, y, Rgb([Self::color_red(pixel), Self::color_green(pixel), Self::color_blue(pixel)]));
             }
         }
@@ -503,7 +382,7 @@ impl Sketch {
         });
     }
 
-    fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         let mask = match self.stroke_mode {
             StrokeMode::Circle => self.generate_circular_mask(),
             StrokeMode::Square => self.generate_square_mask(),
@@ -519,54 +398,61 @@ impl Sketch {
 mod tests {
     use super::*;
 
-    impl Runnable for Sketch {
-        fn setup(&mut self) {
-            println!("SETUP WAS CALLED");
-            self.framerate(60);
+    fn setup(sketch: &mut Sketch) {
+        println!("SETUP WAS CALLED");
+        sketch.framerate(60);
+    }
+
+    fn draw(sketch: &mut Sketch) {
+        if sketch.frame_count == 0 {
+            println!("FIRST DRAW CALL");
         }
 
-        fn draw(&mut self) {
-            if self.frame_count == 0 {
-                println!("FIRST DRAW CALL");
-            }
+        let green: u32 = Sketch::rgb_color(50, 255, 50);
+        let blue: u32 = Sketch::rgb_color(50, 50, 255);
+        let gray: u32 = Sketch::rgb_color(50, 50, 50);
 
-            let green: u32 = Self::rgb_color(50, 255, 50);
-            let blue: u32 = Self::rgb_color(50, 50, 255);
-            let gray: u32 = Self::rgb_color(50, 50, 50);
+        sketch.background(blue);
 
-            self.background(blue);
+        sketch.fill(green);
+        sketch.stroke(gray);
+        sketch.stroke_weight(2);
+        sketch.stroke_mode(StrokeMode::Square);
+        sketch.rect(50, 100, 200, 100);
 
-            self.fill(green);
-            self.stroke(gray);
-            self.stroke_weight(2);
-            self.stroke_mode(StrokeMode::Square);
-            self.rect(50, 100, 200, 100);
+        sketch.stroke(Sketch::rgb_color(255, 50, 255));
+        sketch.stroke_weight(5);
+        sketch.stroke_mode(StrokeMode::Circle);
+        sketch.line(300, 400, sketch.mouse_x as i32, sketch.mouse_y as i32);
+    }
 
-            self.stroke(Self::rgb_color(255, 50, 255));
-            self.stroke_weight(5);
-            self.stroke_mode(StrokeMode::Circle);
-            self.line(300, 400, self.mouse_x as i32, self.mouse_y as i32);
+    fn mouse_pressed(sketch: &mut Sketch) {
+        let red: u32 = Sketch::rgb_color(255, 50, 50);
+
+        sketch.rect(sketch.mouse_x as u32, sketch.mouse_y as u32, 10, 10);
+    }
+
+    fn key_pressed(sketch: &mut Sketch, key: Key) {
+        if key == Key::Space {
+            sketch.background(Sketch::rgb_color(0, 0, 0));
         }
-
-        fn mouse_pressed(&mut self) {
-            let red: u32 = Self::rgb_color(255, 50, 50);
-
-            self.rect(self.mouse_x as u32, self.mouse_y as u32, 10, 10);
-        }
-
-        fn key_pressed(&mut self, key: Key) {
-            if key == Key::Space {
-                self.background(Self::rgb_color(0, 0, 0));
-            }
-            else if key == Key::S {
-                self.save("screenshot.png");
-            }
+        else if key == Key::S {
+            sketch.save("screenshot.png");
         }
     }
 
+
     #[test]
     fn testing() {
-        Sketch::from_size(640, 480).run();
+        let mut sketch = Sketch::from_size(640, 480);
+
+        sketch.setup_method = setup;
+        sketch.draw_method = draw;
+
+        sketch.mouse_pressed_method = mouse_pressed;
+        sketch.key_pressed_method = key_pressed;
+
+        sketch.run();
 
         println!("TESTING DONE")
     }
