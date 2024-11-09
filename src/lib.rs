@@ -13,40 +13,50 @@ pub enum StrokeMode{
 pub struct RgbaColor {}
 
 impl RgbaColor {
+    /// Creates random opaque rgb color
     pub fn random_rgb_color() -> u32 {
         let mask: u32 = !(255u32 << 24);
 
         mask & rand::random::<u32>()
     }
 
+    /// Creates random rgba color
+    /// (can be transparent, see RgbaColor::random_rgb_color() for opaque colors)
     pub fn random_rgba_color() -> u32 {
         rand::random::<u32>()
     }
 
+    /// Creates rgba value based on greyscale u8 value
     pub fn greyscale_color(g: u8) -> u32 {
         ((g as u32) << 16) | ((g as u32) << 8) | g as u32
     }
 
+    /// Creates rgba value based on 3 rgb u8 values
     pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
         ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
+    /// Creates rgba value based on 4 u8 values
     pub fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
+    /// Extracts alpha channel as u8 from u32 color
     pub fn color_alpha(color: u32) -> u8 {
         (color >> 24) as u8
     }
 
+    /// Extracts red channel as u8 from u32 color
     pub fn color_red(color: u32) -> u8 {
         (color >> 16) as u8
     }
 
+    /// Extracts green channel as u8 from u32 color
     pub fn color_green(color: u32) -> u8 {
         (color >> 8) as u8
     }
 
+    /// Extracts blue channel as u8 from u32 color
     pub fn color_blue(color: u32) -> u8 {
         color as u8
     }
@@ -55,6 +65,7 @@ impl RgbaColor {
 pub struct Geometry {}
 
 impl Geometry {
+    /// Creates a random f32 value between lower and upper bounds
     pub fn random(lower: f32, upper: f32) -> f32 {
         lower + rand::random::<f32>() * (upper - lower)
     }
@@ -95,6 +106,7 @@ pub struct Sketch<S: State> {
 
 #[allow(dead_code)]
 impl<S: State> Sketch<S> {
+    /// Initializes a Sketch
     pub fn from_size(width: usize, height: usize, state: S) -> Sketch<S> {
         let window = minifb::Window::new(DEFAULT_NAME, width, height, minifb::WindowOptions::default())
             .unwrap_or_else(|e| {
@@ -132,6 +144,7 @@ impl<S: State> Sketch<S> {
 
     // Private Methods
 
+    /// INTERNAL : interface between Sketch and minifb for mouse interactions
     fn handle_mouse(&mut self) {
         (self.mouse_x, self.mouse_y) = self.window.get_mouse_pos(MouseMode::Clamp).unwrap();
 
@@ -164,6 +177,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// INTERNAL : interface between Sketch and minifb for keyboard interactions
     fn handle_keys(&mut self) {
         let keys_pressed:Vec<Key> = self.window.get_keys_pressed(KeyRepeat::No);
 
@@ -182,6 +196,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// INTERNAL : main loop of the Sketch
     fn run(&mut self) {
         self.setup_method.expect("Setup method was not set !")(self);
 
@@ -206,6 +221,16 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Generates a mask based on current stroke mode
+    fn generate_mask(&self) -> Vec<(i8, i8)> {
+        match self.stroke_mode {
+            StrokeMode::Circle => self.generate_circular_mask(),
+            StrokeMode::Square => self.generate_square_mask(),
+            StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
+        }
+    }
+
+    /// Pastes mask on Sketch at certain x,y coordinates
     fn apply_mask_as_stroke(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
         for (i, j) in mask {
             let (xi, yj) = (x + *i as i32, y + *j as i32);
@@ -215,6 +240,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Traces a line using the low variant of the Bresenham algorithm
     fn bresenham_plot_line_low(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
         let dx = x1 - x0;
         let mut dy = y1 - y0;
@@ -241,6 +267,7 @@ impl<S: State> Sketch<S> {
         result
     }
 
+    /// Traces a line using the high variant of the Bresenham algorithm
     fn bresenham_plot_line_high(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
         let mut dx = x1 - x0;
         let dy = y1 - y0;
@@ -267,6 +294,7 @@ impl<S: State> Sketch<S> {
         result
     }
 
+    /// Traces a line integrating both low and high variants of the Bresenham algorithm
     fn bresenham_plot_line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
         let points_to_plot: Vec<(i32, i32)>;
 
@@ -289,6 +317,7 @@ impl<S: State> Sketch<S> {
         points_to_plot
     }
 
+    /// Applies mask along traced line
     fn bresenham_plot_line_mask(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: Vec<(i8, i8)>) {
         let points_to_plot = self.bresenham_plot_line(x0, y0, x1, y1);
 
@@ -297,6 +326,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Plots a point on all octants of a space around xc,yc origin
     fn plot_on_all_octants(points: &mut Vec<(i32, i32)>, xc: i32, yc: i32, x: i32, y: i32) {
         points.push((xc + x, yc + y));
         points.push((xc + y, yc + x));
@@ -311,6 +341,7 @@ impl<S: State> Sketch<S> {
         points.push((xc - y, yc - x));
     }
 
+    /// Traces a circle using the Bresenham algorithm (Midpoint algorithm)
     fn bresenham_plot_circle(&mut self, xc: i32, yc: i32, r: i32) -> Vec<(i32, i32)> {
         let mut points: Vec<(i32, i32)> = vec![];
 
@@ -331,6 +362,7 @@ impl<S: State> Sketch<S> {
         points
     }
 
+    /// Applies stroke mask along traced circle
     fn circle_stroke(&mut self, xc: i32, yc: i32, r: i32) {
         let mask = self.generate_mask();
         let circle = self.bresenham_plot_circle(xc, yc, r);
@@ -339,6 +371,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Fills a circular region of the sketch using a brute-force algorithm
     fn circle_fill(&mut self, xc: i32, yc: i32, r: i32) {
         for xi in -r..=r {
             for yi in -r..=r {
@@ -352,6 +385,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Generates a circular mask with radius = stroke_weight
     fn generate_circular_mask(&self) -> Vec<(i8, i8)> {
         let mut mask: Vec<(i8, i8)> = Vec::new();
 
@@ -367,6 +401,7 @@ impl<S: State> Sketch<S> {
         mask
     }
 
+    /// Generates a square mask with side_length = 2 * stroke_weight
     fn generate_square_mask(&self) -> Vec<(i8, i8)> {
         let v1 = -self.stroke_weight;
         let v2 = self.stroke_weight;
@@ -383,6 +418,7 @@ impl<S: State> Sketch<S> {
         mask
     }
 
+    /// Fills a flat triangle situated above its base
     fn triangle_flat_top(&mut self, x0: i32, y0: i32, base: i32, x1: i32, y1: i32) {
         let left_edge = self.bresenham_plot_line(x0, y0, x1, y1);
         let right_edge = self.bresenham_plot_line(x0 + base, y0, x1, y1);
@@ -413,6 +449,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Fills a flat triangle situated below its base
     fn triangle_flat_bottom(&mut self, x0: i32, y0: i32, base: i32, x1: i32, y1: i32) {
         let left_edge = self.bresenham_plot_line(x1, y1, x0, y0);
         let right_edge = self.bresenham_plot_line(x1, y1, x0 + base, y0);
@@ -443,6 +480,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Fills a triangle by separating into top and bottom parts
     fn triangle_fill(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
         let mut triangle = [(x0, y0), (x1, y1), (x2, y2)];
         triangle.sort_by(|&(_, y1), &(_, y2)| y2.cmp(&y1));
@@ -464,12 +502,14 @@ impl<S: State> Sketch<S> {
         self.triangle_flat_top(x_start, triangle[1].1, base, triangle[0].0, triangle[0].1);
     }
 
+    /// Strokes the 3 sides of a triangle
     fn triangle_stroke(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
         self.line(x0, y0, x1, y1);
         self.line(x0, y0, x2, y2);
         self.line(x2, y2, x1, y1);
     }
 
+    /// Changes the color of the pixel at x,y
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
         if x >= self.width as u32 || y >= self.height as u32 {
             return;
@@ -478,6 +518,7 @@ impl<S: State> Sketch<S> {
         self.pixels[index] = color;
     }
 
+    /// Fills the inside of a rectangle at x,y with side lengths w,h
     fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32) {
         for i in x..(x+w) {
             for j in y..(y+h) {
@@ -486,6 +527,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Strokes the 4 sides of a rectangle at x,y with side lengths w,h
     fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32) {
         let x = x as i32;
         let y = y as i32;
@@ -499,58 +541,71 @@ impl<S: State> Sketch<S> {
 
     // Public Methods
 
+    /// Changes the name of the window
     pub fn name(&mut self, name: &str) {
         self.window.set_title(name);
     }
 
+    /// Checks if the key: Key is currently pressed
     pub fn key_is_down(&self, key: Key) -> bool{
         self.window.is_key_down(key)
     }
 
+    /// Stops the animation loop
     pub fn no_loop(&mut self) {
         self.is_looping = false;
     }
 
+    /// Sets the framerate limit of the window
     pub fn framerate(&mut self, fps: usize) {
         self.window.set_target_fps(fps);
     }
 
+    /// Sets the current fill color
     pub fn fill(&mut self, color: u32) {
         self.fill_color = Some(color);
     }
 
+    /// Removes current fill color, drawn shapes will be hollow
     pub fn no_fill(&mut self) {
         self.fill_color = None;
     }
 
+    /// Sets the current stroke color
     pub fn stroke(&mut self, color: u32) {
         self.stroke_color = Some(color);
     }
 
+    /// Removes the current stroke color, drawn shapes will not have an outline
     pub fn no_stroke(&mut self) {
         self.stroke_color = None;
     }
 
+    /// Sets the thickness of the outline
     pub fn stroke_weight(&mut self, weight: i8) {
         self.stroke_weight = weight;
     }
 
+    /// Changes the current stroke mode, see StrokeMode
     pub fn stroke_mode(&mut self, mode: StrokeMode) {
         self.stroke_mode = mode;
     }
 
+    /// Applies current fill color to pixel at x,y
     pub fn fill_pixel(&mut self, x: u32, y: u32) {
          if let Some(color) = self.fill_color {
              self.set_pixel(x, y, color);
          }
     }
 
+    /// Applies current stroke color to pixel at x,y
     pub fn stroke_pixel(&mut self, x: u32, y: u32) {
         if let Some(color) = self.stroke_color {
             self.set_pixel(x, y, color);
         }
     }
 
+    /// Draws a rectangle at x,y with side lengths w,h
     pub fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
         if self.fill_color.is_some() {
             self.rect_fill(x, y, w, h);
@@ -560,6 +615,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Draws a triangle between points x0,y0 x1,y1 and x2,y2
     pub fn triangle(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, x2: i32, y2: i32) {
         if self.fill_color.is_some() {
             self.triangle_fill(x0, y0, x1, y1, x2, y2);
@@ -569,6 +625,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Draws a circle at x,y with radius r
     pub fn circle(&mut self, x: i32, y: i32, r: i32) {
         if self.fill_color.is_some() {
             self.circle_fill(x, y, r);
@@ -578,6 +635,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Fills the window with given color
     pub fn background(&mut self, color: u32) {
         for i in 0..self.width as u32 {
             for j in 0..self.height as u32 {
@@ -586,6 +644,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Saves a png screenshot of the window
     pub fn save(&mut self, file_path: &str) {
         let mut image = ImageBuffer::new(self.width as u32, self.height as u32);
 
@@ -601,14 +660,7 @@ impl<S: State> Sketch<S> {
         });
     }
 
-    pub fn generate_mask(&self) -> Vec<(i8, i8)> {
-        match self.stroke_mode {
-            StrokeMode::Circle => self.generate_circular_mask(),
-            StrokeMode::Square => self.generate_square_mask(),
-            StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
-        }
-    }
-
+    /// Draws a line between points x0,y0 and x1,y1
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         let mask = self.generate_mask();
         self.bresenham_plot_line_mask(x0, y0, x1, y1, mask);
