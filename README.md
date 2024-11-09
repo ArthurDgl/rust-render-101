@@ -80,7 +80,11 @@ fn main() {
 }
 ```
 Result :
+
+
+![image](https://github.com/user-attachments/assets/2ec4adce-c821-4088-b2e3-602b2a35830e)
+
 (Line position can be changed by clicking, each mouse button changes a different end of the line)
 
+(Space key changes the background to a random rgb color)
 
-![image](https://github.com/user-attachments/assets/4f1c1b1c-8194-441c-a4ad-7d9996980f9e)
