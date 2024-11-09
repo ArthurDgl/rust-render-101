@@ -93,6 +93,7 @@ pub struct Sketch<S: State> {
     pub state: S,
 }
 
+#[allow(dead_code)]
 impl<S: State> Sketch<S> {
     pub fn from_size(width: usize, height: usize, state: S) -> Sketch<S> {
         let window = minifb::Window::new(DEFAULT_NAME, width, height, minifb::WindowOptions::default())
@@ -470,7 +471,7 @@ impl<S: State> Sketch<S> {
     }
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
-        if x < 0 || x >= self.width as u32 || y < 0 || y >= self.height as u32 {
+        if x >= self.width as u32 || y >= self.height as u32 {
             return;
         }
         let index = x as usize + y as usize * self.width;
