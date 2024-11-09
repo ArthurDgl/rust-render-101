@@ -1,6 +1,5 @@
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
 use image::{ImageBuffer, Rgb};
-use image::error::UnsupportedErrorKind::Color;
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
@@ -206,7 +205,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
-    fn bresenham_plot_line_pixel(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
+    fn apply_mask_as_stroke(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
         for (i, j) in mask {
             let (xi, yj) = (x + *i as i32, y + *j as i32);
             if xi >= 0 && yj >= 0 {
@@ -289,11 +288,66 @@ impl<S: State> Sketch<S> {
         points_to_plot
     }
 
-    fn bresenham_plot_line_mask(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: &Vec<(i8, i8)>) {
+    fn bresenham_plot_line_mask(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, mask: Vec<(i8, i8)>) {
         let points_to_plot = self.bresenham_plot_line(x0, y0, x1, y1);
 
         for point in points_to_plot {
-            self.bresenham_plot_line_pixel(point.0, point.1, mask);
+            self.apply_mask_as_stroke(point.0, point.1, &mask);
+        }
+    }
+
+    fn plot_on_all_octants(points: &mut Vec<(i32, i32)>, xc: i32, yc: i32, x: i32, y: i32) {
+        points.push((xc + x, yc + y));
+        points.push((xc + y, yc + x));
+
+        points.push((xc - x, yc + y));
+        points.push((xc - y, yc + x));
+
+        points.push((xc + x, yc - y));
+        points.push((xc + y, yc - x));
+
+        points.push((xc - x, yc - y));
+        points.push((xc - y, yc - x));
+    }
+
+    fn bresenham_plot_circle(&mut self, xc: i32, yc: i32, r: i32) -> Vec<(i32, i32)> {
+        let mut points: Vec<(i32, i32)> = vec![];
+
+        let (mut x, mut y) = (0, r);
+        let mut d = 3 - 2 * r;
+
+        while y >= x {
+            Self::plot_on_all_octants(&mut points, xc, yc, x, y);
+            if d > 0 {
+                y -= 1;
+                d += 4 * (x - y) + 10;
+            }
+            else {
+                d += 4 * x + 6;
+            }
+            x += 1;
+        }
+        points
+    }
+
+    fn circle_stroke(&mut self, xc: i32, yc: i32, r: i32) {
+        let mask = self.generate_mask();
+        let circle = self.bresenham_plot_circle(xc, yc, r);
+        for (x, y) in circle {
+            self.apply_mask_as_stroke(x, y, &mask)
+        }
+    }
+
+    fn circle_fill(&mut self, xc: i32, yc: i32, r: i32) {
+        for xi in -r..=r {
+            for yi in -r..=r {
+                if xi*xi + yi*yi > r*r {continue;}
+
+                let (x, y) = (xc + xi, yc + yi);
+                if x >= 0 && y >= 0 {
+                    self.fill_pixel(x as u32, y as u32);
+                }
+            }
         }
     }
 
@@ -416,10 +470,10 @@ impl<S: State> Sketch<S> {
     }
 
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
-        let index = x as usize + y as usize * self.width;
-        if index < 0 || index >= self.pixels.len() {
+        if x < 0 || x >= self.width as u32 || y < 0 || y >= self.height as u32 {
             return;
-        };
+        }
+        let index = x as usize + y as usize * self.width;
         self.pixels[index] = color;
     }
 
@@ -514,6 +568,15 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    pub fn circle(&mut self, x: i32, y: i32, r: i32) {
+        if self.fill_color.is_some() {
+            self.circle_fill(x, y, r);
+        }
+        if self.stroke_color.is_some() {
+            self.circle_stroke(x, y, r);
+        }
+    }
+
     pub fn background(&mut self, color: u32) {
         for i in 0..self.width as u32 {
             for j in 0..self.height as u32 {
@@ -537,14 +600,17 @@ impl<S: State> Sketch<S> {
         });
     }
 
-    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
-        let mask = match self.stroke_mode {
+    pub fn generate_mask(&self) -> Vec<(i8, i8)> {
+        match self.stroke_mode {
             StrokeMode::Circle => self.generate_circular_mask(),
             StrokeMode::Square => self.generate_square_mask(),
             StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
-        };
+        }
+    }
 
-        self.bresenham_plot_line_mask(x0, y0, x1, y1, &mask);
+    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let mask = self.generate_mask();
+        self.bresenham_plot_line_mask(x0, y0, x1, y1, mask);
     }
 }
 
@@ -596,6 +662,10 @@ mod tests {
         sketch.stroke_weight(5);
         sketch.stroke_mode(StrokeMode::Circle);
         sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
+
+        sketch.stroke(RgbaColor::rgb_color(200, 50, 50));
+        sketch.stroke_weight(3);
+        sketch.circle(sketch.mouse_x as i32, sketch.mouse_y as i32, 15);
     }
 
     fn mouse_pressed(sketch: &mut Sketch<MyState>) {
