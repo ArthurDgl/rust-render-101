@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["Arthur Dugnolle arthur.dugnolle@gmail.com"]
 license = "MIT"
 repository = "https://www.github.com/ArthurDgl/rust-render-101.git"
+include = [
+    "src/lib.rs",
+    "Cargo.toml",
+    "LICENSE.txt",
+    "README.md",
+]
 
 [dependencies]
 minifb = "0.27.0"
