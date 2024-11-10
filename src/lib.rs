@@ -69,6 +69,46 @@ impl Geometry {
     pub fn random(lower: f32, upper: f32) -> f32 {
         lower + rand::random::<f32>() * (upper - lower)
     }
+
+    fn triangulate_monotone(points: &Vec<(i32, i32)>, main_chain: &mut Vec<usize>, right_chain: &mut Vec<usize>) -> Vec<(usize, usize, usize)> {
+        println!("main : {}, right : {}", main_chain.len(), right_chain.len());
+        if main_chain.len() + right_chain.len() == 3 {
+            main_chain.append(right_chain);
+            return vec![(main_chain[0], main_chain[1], main_chain[2]); 1];
+        }
+
+        let start_point = points[main_chain[0]];
+
+        println!("{}, {}, {}, {}", points[main_chain[1]].1, points[right_chain[1]].1, points[right_chain[0]].1, points[main_chain[2]].1);
+        if main_chain.len() > 2 && right_chain.len() > 1 && points[main_chain[1]].1 < points[right_chain[1]].1 && points[right_chain[0]].1 < points[main_chain[2]].1 {
+            println!("chose middle");
+            let mut result = vec![(main_chain[0], main_chain[1], right_chain[0])];
+            main_chain.remove(0);
+            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
+            result
+        }
+        else if main_chain.len() > 2
+        && Self::is_left_triangle_valid(start_point, points[main_chain[1]], points[main_chain[2]]) {
+            println!("chose left");
+            let mut result = vec![(main_chain[0], main_chain[1], main_chain[2]); 1];
+            main_chain.remove(1);
+            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
+            result
+        }
+        else {
+            println!("chose right");
+            let mut result = vec![(main_chain[0], right_chain[0], right_chain[1]); 1];
+            right_chain.remove(0);
+            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
+            result
+        }
+    }
+
+    fn is_left_triangle_valid(p0: (i32, i32), p1: (i32, i32), p2: (i32, i32)) -> bool {
+        let perp = (p1.1 - p0.1, p0.0 - p1.0);
+        let p1p2 = (p2.0 - p1.0, p2.1 - p1.1);
+        0 < perp.0 * p1p2.0 + perp.1 * p1p2.1
+    }
 }
 
 pub trait State : Default {}
@@ -665,6 +705,14 @@ impl<S: State> Sketch<S> {
         let mask = self.generate_mask();
         self.bresenham_plot_line_mask(x0, y0, x1, y1, mask);
     }
+
+    fn monotone_polygon(&mut self, points: &Vec<(i32, i32)>, main_chain: &mut Vec<usize>, right_chain: &mut Vec<usize>) {
+        let triangles = Geometry::triangulate_monotone(points, main_chain, right_chain);
+        for (i, j, k) in triangles {
+            let ((x0, y0), (x1, y1), (x2, y2)) = (points[i], points[j], points[k]);
+            self.triangle(x0, y0, x1, y1, x2, y2);
+        }
+    }
 }
 
 
@@ -694,31 +742,43 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
-        let green: u32 = RgbaColor::rgb_color(50, 255, 50);
+        let green: u32 = RgbaColor::rgb_color(50, 200, 50);
         let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
-        sketch.background(sketch.state.background_color);
+        let points: Vec<(i32, i32)> = vec![(60, 10), (20, 40), (80, 50), (10, 90), (70, 120), (120, 70), (160, 80), (60, 100)];
+        let main_chain: Vec<usize> = vec![0, 1, 2, 3, 4];
+        let right_chain: Vec<usize> = vec![5, 6, 7];
 
-        sketch.fill(green);
-        sketch.stroke(gray);
-        sketch.stroke_weight(2);
-        sketch.stroke_mode(StrokeMode::Square);
-        sketch.rect(50, 100, 200, 100);
-
-        sketch.fill(gray);
+        sketch.background(gray);
+        sketch.no_fill();
         sketch.stroke(green);
-        sketch.stroke_weight(3);
-        sketch.stroke_mode(StrokeMode::Circle);
-        sketch.triangle(350, 50, 450, 150, 300, 300);
+        sketch.stroke_weight(2);
+        sketch.monotone_polygon(&points, &mut main_chain.clone(), &mut right_chain.clone());
 
-        sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
-        sketch.stroke_weight(5);
-        sketch.stroke_mode(StrokeMode::Circle);
-        sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
+        sketch.no_loop();
 
-        sketch.stroke(RgbaColor::rgb_color(200, 50, 50));
-        sketch.stroke_weight(3);
-        sketch.circle(sketch.mouse_x as i32, sketch.mouse_y as i32, 15);
+        // sketch.background(sketch.state.background_color);
+        //
+        // sketch.fill(green);
+        // sketch.stroke(gray);
+        // sketch.stroke_weight(2);
+        // sketch.stroke_mode(StrokeMode::Square);
+        // sketch.rect(50, 100, 200, 100);
+        //
+        // sketch.fill(gray);
+        // sketch.stroke(green);
+        // sketch.stroke_weight(3);
+        // sketch.stroke_mode(StrokeMode::Circle);
+        // sketch.triangle(350, 50, 450, 150, 300, 300);
+        //
+        // sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
+        // sketch.stroke_weight(5);
+        // sketch.stroke_mode(StrokeMode::Circle);
+        // sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
+        //
+        // sketch.stroke(RgbaColor::rgb_color(200, 50, 50));
+        // sketch.stroke_weight(3);
+        // sketch.circle(sketch.mouse_x as i32, sketch.mouse_y as i32, 15);
     }
 
     fn mouse_pressed(sketch: &mut Sketch<MyState>) {
