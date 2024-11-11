@@ -71,41 +71,61 @@ impl Geometry {
     }
 
     fn triangulate_monotone(points: &Vec<(i32, i32)>, main_chain: &mut Vec<usize>, right_chain: &mut Vec<usize>) -> Vec<(usize, usize, usize)> {
-        println!("main : {}, right : {}", main_chain.len(), right_chain.len());
         if main_chain.len() + right_chain.len() == 3 {
             main_chain.append(right_chain);
-            return vec![(main_chain[0], main_chain[1], main_chain[2]); 1];
+            return vec![(main_chain[0], main_chain[1], main_chain[2])];
         }
 
         let start_point = points[main_chain[0]];
+        let mut result: Vec<(usize, usize, usize)> = Vec::new();
+        let mut best_triangle: Option<(usize, usize, usize)> = None;
+        let mut best_lowest_y: i32 = points[main_chain[main_chain.len() - 1]].1;
+        let mut remove_from_main: Option<usize> = None;
+        let mut remove_from_right: Option<usize> = None;
 
-        println!("{}, {}, {}, {}", points[main_chain[1]].1, points[right_chain[1]].1, points[right_chain[0]].1, points[main_chain[2]].1);
-        if main_chain.len() > 2 && right_chain.len() > 1 && points[main_chain[1]].1 < points[right_chain[1]].1 && points[right_chain[0]].1 < points[main_chain[2]].1 {
-            println!("chose middle");
-            let mut result = vec![(main_chain[0], main_chain[1], right_chain[0])];
-            main_chain.remove(0);
-            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
-            result
+        let mut evaluate_triangle = |triangle: (usize, usize, usize), main_idx: Option<usize>, right_idx: Option<usize>| {
+            let lowest_y = points[triangle.0].1.max(points[triangle.1].1).max(points[triangle.2].1);
+            if lowest_y < best_lowest_y {
+                best_triangle = Some(triangle);
+                best_lowest_y = lowest_y;
+                remove_from_main = main_idx;
+                remove_from_right = right_idx;
+            }
+        };
+
+        if main_chain.len() > 1 && !right_chain.is_empty() {
+            evaluate_triangle((main_chain[0], main_chain[1], right_chain[0]), Some(0), None);
         }
-        else if main_chain.len() > 2
-        && Self::is_left_triangle_valid(start_point, points[main_chain[1]], points[main_chain[2]]) {
-            println!("chose left");
-            let mut result = vec![(main_chain[0], main_chain[1], main_chain[2]); 1];
-            main_chain.remove(1);
-            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
-            result
+        if main_chain.len() > 2 && Self::is_left_triangle_valid(start_point, points[main_chain[1]], points[main_chain[2]]) {
+            evaluate_triangle((main_chain[0], main_chain[1], main_chain[2]), Some(1), None);
         }
-        else {
-            println!("chose right");
-            let mut result = vec![(main_chain[0], right_chain[0], right_chain[1]); 1];
-            right_chain.remove(0);
-            result.append(&mut Self::triangulate_monotone(points, main_chain, right_chain));
-            result
+        if right_chain.len() > 1 && Self::is_right_triangle_valid(start_point, points[right_chain[0]], points[right_chain[1]]) {
+            evaluate_triangle((main_chain[0], right_chain[0], right_chain[1]), None, Some(0));
         }
+
+        if let Some(idx) = remove_from_main {
+            main_chain.remove(idx);
+        }
+        if let Some(idx) = remove_from_right {
+            right_chain.remove(idx);
+        }
+
+        if let Some(triangle) = best_triangle {
+            result.push(triangle);
+        }
+        result.extend(Self::triangulate_monotone(points, main_chain, right_chain));
+
+        result
     }
 
     fn is_left_triangle_valid(p0: (i32, i32), p1: (i32, i32), p2: (i32, i32)) -> bool {
         let perp = (p1.1 - p0.1, p0.0 - p1.0);
+        let p1p2 = (p2.0 - p1.0, p2.1 - p1.1);
+        0 < perp.0 * p1p2.0 + perp.1 * p1p2.1
+    }
+
+    fn is_right_triangle_valid(p0: (i32, i32), p1: (i32, i32), p2: (i32, i32)) -> bool {
+        let perp = (p0.1 - p1.1, p1.0 - p0.0);
         let p1p2 = (p2.0 - p1.0, p2.1 - p1.1);
         0 < perp.0 * p1p2.0 + perp.1 * p1p2.1
     }
@@ -745,14 +765,14 @@ mod tests {
         let green: u32 = RgbaColor::rgb_color(50, 200, 50);
         let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
 
-        let points: Vec<(i32, i32)> = vec![(60, 10), (20, 40), (80, 50), (10, 90), (70, 120), (120, 70), (160, 80), (60, 100)];
+        let points: Vec<(i32, i32)> = vec![(180, 30), (60, 120), (240, 150), (30, 270), (210, 360), (360, 210), (480, 240), (180, 300)];
         let main_chain: Vec<usize> = vec![0, 1, 2, 3, 4];
         let right_chain: Vec<usize> = vec![5, 6, 7];
 
         sketch.background(gray);
-        sketch.no_fill();
-        sketch.stroke(green);
-        sketch.stroke_weight(2);
+        sketch.no_stroke();
+        sketch.fill(green);
+        //sketch.stroke_weight(2);
         sketch.monotone_polygon(&points, &mut main_chain.clone(), &mut right_chain.clone());
 
         sketch.no_loop();
