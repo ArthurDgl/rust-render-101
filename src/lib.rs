@@ -1,6 +1,7 @@
 use image::{ImageBuffer, Rgb};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
+use earcutr;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -8,6 +9,11 @@ pub enum StrokeMode{
     Circle,
     Square,
     Custom(fn(i8) -> Vec<(i8, i8)>),
+}
+
+pub enum ShapeType{
+    Polygon,
+    LinearSpline,
 }
 
 pub struct RgbaColor {}
@@ -94,6 +100,10 @@ pub struct Sketch<S: State> {
     stroke_weight: i8,
     stroke_mode: StrokeMode,
 
+    shape_vertices: Vec<(i32, i32)>,
+    shape_holes: Vec<usize>,
+    shape_type: ShapeType,
+
     pub draw_method: Option<fn(&mut Self)>,
     pub setup_method: Option<fn(&mut Self)>,
     pub mouse_pressed_method: Option<fn(&mut Self)>,
@@ -131,6 +141,9 @@ impl<S: State> Sketch<S> {
             stroke_color: Some(0),
             stroke_weight: 1,
             stroke_mode: StrokeMode::Circle,
+            shape_vertices: Vec::new(),
+            shape_holes: Vec::new(),
+            shape_type: ShapeType::Polygon,
 
             draw_method: None,
             setup_method: None,
@@ -539,6 +552,62 @@ impl<S: State> Sketch<S> {
         self.line(x+w, y, x+w, y+h);
     }
 
+    /// Triangulates and fills current constructed polygon
+    fn polygon_fill(&mut self) {
+        let mut coords: Vec<f64> = Vec::new();
+
+        for point in &self.shape_vertices {
+            coords.push(point.0 as f64);
+            coords.push(point.1 as f64);
+        }
+
+        let triangles = earcutr::earcut(&coords, &self.shape_holes, 2).unwrap_or_else(|e| panic!("Triangulation error: {e}"));
+
+        println!("triangles :");
+
+        for i in 0..(triangles.len() / 3) {
+            let (a, b, c) = (triangles[3*i], triangles[3*i+1], triangles[3*i+2]);
+            self.triangle_fill(
+                self.shape_vertices[a].0, self.shape_vertices[a].1,
+                self.shape_vertices[b].0, self.shape_vertices[b].1,
+                self.shape_vertices[c].0, self.shape_vertices[c].1
+            )
+        }
+    }
+
+    /// Strokes all edges of the current constructed polygon
+    fn polygon_stroke(&mut self) {
+        let mut start = 0usize;
+        let mut hole = 0usize;
+        for i in 0..self.shape_vertices.len() {
+
+            println!("i: {i}, start: {start}, holenb: {hole}");
+
+            let (x0, y0) = self.shape_vertices[i];
+            let (x1, y1) = self.shape_vertices[
+                if i == self.shape_vertices.len() - 1 || (hole < self.shape_holes.len() && i == self.shape_holes[hole] - 1) {start}
+                else {i + 1}
+            ];
+
+            self.line(x0, y0, x1, y1);
+
+            if hole < self.shape_holes.len() && i == self.shape_holes[hole] {
+                hole += 1;
+                start = i;
+            }
+        }
+    }
+
+    /// Draws a polygon based on current shape construction
+    fn polygon(&mut self) {
+        if self.fill_color.is_some() {
+            self.polygon_fill();
+        }
+        if self.stroke_color.is_some() {
+            self.polygon_stroke();
+        }
+    }
+
     // Public Methods
 
     /// Changes the name of the window
@@ -665,6 +734,35 @@ impl<S: State> Sketch<S> {
         let mask = self.generate_mask();
         self.bresenham_plot_line_mask(x0, y0, x1, y1, mask);
     }
+
+    /// Indicates the start of a shape construction
+    pub fn begin_shape(&mut self, shape_type: ShapeType) {
+        self.shape_type = shape_type;
+        self.shape_vertices.clear();
+        self.shape_holes.clear();
+    }
+
+    /// Add a vertex to current shape construction
+    pub fn vertex(&mut self, x: i32, y: i32) {
+        self.shape_vertices.push((x, y));
+    }
+
+    /// Indicate start of a hole within the current shape construction
+    pub fn begin_hole(&mut self) {
+        self.shape_holes.push(self.shape_vertices.len());
+    }
+
+    /// Indicate the end of the current shape construction and render constructed shape
+    pub fn end_shape(&mut self) {
+        match self.shape_type {
+            ShapeType::Polygon => {
+                self.polygon();
+            }
+            ShapeType::LinearSpline => {
+                todo!();
+            }
+        }
+    }
 }
 
 
@@ -674,11 +772,7 @@ mod tests {
 
     #[derive(Default)]
     struct MyState {
-        line_x1: i32,
-        line_y1: i32,
-        line_x2: i32,
-        line_y2: i32,
-        background_color: u32,
+
     }
 
     impl State for MyState {}
@@ -694,62 +788,36 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
-        let green: u32 = RgbaColor::rgb_color(50, 255, 50);
-        let gray: u32 = RgbaColor::rgb_color(50, 50, 50);
+        sketch.background(RgbaColor::greyscale_color(50));
 
-        sketch.background(sketch.state.background_color);
-
-        sketch.fill(green);
-        sketch.stroke(gray);
-        sketch.stroke_weight(2);
-        sketch.stroke_mode(StrokeMode::Square);
-        sketch.rect(50, 100, 200, 100);
-
-        sketch.fill(gray);
-        sketch.stroke(green);
+        sketch.stroke(RgbaColor::greyscale_color(255));
         sketch.stroke_weight(3);
-        sketch.stroke_mode(StrokeMode::Circle);
-        sketch.triangle(350, 50, 450, 150, 300, 300);
+        sketch.fill(0);
 
-        sketch.stroke(RgbaColor::rgb_color(255, 50, 255));
-        sketch.stroke_weight(5);
-        sketch.stroke_mode(StrokeMode::Circle);
-        sketch.line(sketch.state.line_x1, sketch.state.line_y1, sketch.state.line_x2, sketch.state.line_y2);
-
-        sketch.stroke(RgbaColor::rgb_color(200, 50, 50));
-        sketch.stroke_weight(3);
-        sketch.circle(sketch.mouse_x as i32, sketch.mouse_y as i32, 15);
-    }
-
-    fn mouse_pressed(sketch: &mut Sketch<MyState>) {
-        let (x, y) = (sketch.mouse_x as i32, sketch.mouse_y as i32);
-
-        match sketch.mouse_button {
-            MouseButton::Left => (sketch.state.line_x1, sketch.state.line_y1) = (x, y),
-            MouseButton::Right => (sketch.state.line_x2, sketch.state.line_y2) = (x, y),
-            _ => (),
-        };
-    }
-
-    fn key_pressed(sketch: &mut Sketch<MyState>, key: Key) {
-        if key == Key::Space {
-            sketch.state.background_color = RgbaColor::random_rgb_color();
-        } else if key == Key::S {
-            sketch.save("screenshot.png");
+        sketch.begin_shape(ShapeType::Polygon);
+        {
+            for i in 0..10 {
+                let angle: f32 = std::f32::consts::PI / 5f32  * i as f32;
+                let (x, y) = (320f32 + 200f32 * angle.cos(), 240f32 + 200f32 * angle.sin());
+                sketch.vertex(x as i32, y as i32);
+            }
+            sketch.begin_hole();
+            for i in 0..4 {
+                let angle: f32 = std::f32::consts::PI / 2f32  * i as f32;
+                let (x, y) = (320f32 + 100f32 * angle.cos(), 240f32 + 100f32 * angle.sin());
+                sketch.vertex(x as i32, y as i32);
+            }
         }
+        sketch.end_shape();
     }
 
     #[test]
     fn testing() {
         let mut state = MyState::default();
-        state.background_color = RgbaColor::random_rgb_color();
         let mut sketch = Sketch::<MyState>::from_size(640, 480, state);
 
         sketch.setup_method = Some(setup);
         sketch.draw_method = Some(draw);
-
-        sketch.mouse_pressed_method = Some(mouse_pressed);
-        sketch.key_pressed_method = Some(key_pressed);
 
         sketch.run();
 
