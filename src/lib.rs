@@ -13,7 +13,7 @@ pub enum StrokeMode{
 
 pub enum ShapeType{
     Polygon,
-    LinearSpline,
+    LinearSpline { loops: bool },
 }
 
 pub struct RgbaColor {}
@@ -577,11 +577,26 @@ impl<S: State> Sketch<S> {
 
     /// Strokes all edges of the current constructed polygon
     fn polygon_stroke(&mut self) {
+        self.linear_spline(true);
+    }
+
+    /// Draws a polygon based on current shape construction
+    fn polygon(&mut self) {
+        if self.fill_color.is_some() {
+            self.polygon_fill();
+        }
+        if self.stroke_color.is_some() {
+            self.polygon_stroke();
+        }
+    }
+
+    fn linear_spline(&mut self, loops: bool) {
         let mut start = 0usize;
         let mut hole = 0usize;
         for i in 0..self.shape_vertices.len() {
-
-            println!("i: {i}, start: {start}, holenb: {hole}");
+            if !loops && (i == self.shape_vertices.len() - 1 || (hole < self.shape_holes.len() && i == self.shape_holes[hole] - 1)) {
+                continue;
+            }
 
             let (x0, y0) = self.shape_vertices[i];
             let (x1, y1) = self.shape_vertices[
@@ -595,16 +610,6 @@ impl<S: State> Sketch<S> {
                 hole += 1;
                 start = i;
             }
-        }
-    }
-
-    /// Draws a polygon based on current shape construction
-    fn polygon(&mut self) {
-        if self.fill_color.is_some() {
-            self.polygon_fill();
-        }
-        if self.stroke_color.is_some() {
-            self.polygon_stroke();
         }
     }
 
@@ -758,8 +763,8 @@ impl<S: State> Sketch<S> {
             ShapeType::Polygon => {
                 self.polygon();
             }
-            ShapeType::LinearSpline => {
-                todo!();
+            ShapeType::LinearSpline {loops} => {
+                self.linear_spline(loops);
             }
         }
     }
