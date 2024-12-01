@@ -1,19 +1,30 @@
-use image::{ImageBuffer, Rgb};
+use std::cmp::max;
+use std::fs;
+use std::io::Read;
+use image::{ImageBuffer, Pixel, Rgb, Rgba};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
 use earcutr;
+use fontdue::{Font, FontSettings};
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
-pub enum StrokeMode{
+pub enum StrokeMode {
     Circle,
     Square,
     Custom(fn(i8) -> Vec<(i8, i8)>),
 }
 
-pub enum ShapeType{
+pub enum FontMode {
+    TimesNewRoman,
+    Arial,
+    Custom {file_path: String},
+}
+
+pub enum ShapeType {
     Polygon,
     LinearSpline { loops: bool },
+    CubicBezierSpline { loops: bool },
 }
 
 pub struct RgbaColor {}
@@ -34,12 +45,12 @@ impl RgbaColor {
 
     /// Creates rgba value based on greyscale u8 value
     pub fn greyscale_color(g: u8) -> u32 {
-        ((g as u32) << 16) | ((g as u32) << 8) | g as u32
+        255u32 << 24 | ((g as u32) << 16) | ((g as u32) << 8) | g as u32
     }
 
     /// Creates rgba value based on 3 rgb u8 values
     pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
-        ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+        255u32 << 24 | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
     /// Creates rgba value based on 4 u8 values
@@ -65,6 +76,50 @@ impl RgbaColor {
     /// Extracts blue channel as u8 from u32 color
     pub fn color_blue(color: u32) -> u8 {
         color as u8
+    }
+
+    fn color_u32_to_4xf32(color: u32) -> (f32, f32, f32, f32) {
+        (
+            RgbaColor::color_alpha(color) as f32 / 255f32,
+            RgbaColor::color_red(color) as f32 / 255f32,
+            RgbaColor::color_green(color) as f32 / 255f32,
+            RgbaColor::color_blue(color) as f32 / 255f32,
+        )
+    }
+
+    fn color_4xf32_to_u32(color: (f32, f32, f32, f32)) -> u32 {
+        RgbaColor::rgba_color(
+            (color.0 * 255f32) as u8,
+            (color.1 * 255f32) as u8,
+            (color.2 * 255f32) as u8,
+            (color.3 * 255f32) as u8,
+        )
+    }
+
+    fn alpha_compose_alpha(p_a: f32, q_a: f32) -> f32 {
+        p_a + q_a - p_a * q_a
+    }
+
+    fn alpha_compose_channel(p_a: f32, p_c: f32, q_a: f32, q_c: f32, r_a: f32) -> f32 {
+        (p_c * p_a + q_c * q_a - p_c * p_a * q_a) / r_a
+    }
+
+    fn color_alpha_compose_color(color_p: u32, color_q: u32) -> u32 {
+        let (p_a, p_r, p_g, p_b) = Self::color_u32_to_4xf32(color_p);
+        let (q_a, q_r, q_g, q_b) = Self::color_u32_to_4xf32(color_q);
+
+        let result_a = Self::alpha_compose_alpha(p_a, q_a);
+        if result_a <= 0.0001f32 {
+            return RgbaColor::rgba_color(0, 0, 0, 0);
+        }
+
+        let (result_r, result_g, result_b) = (
+            Self::alpha_compose_channel(p_a, p_r, q_a, q_r, result_a),
+            Self::alpha_compose_channel(p_a, p_g, q_a, q_g, result_a),
+            Self::alpha_compose_channel(p_a, p_b, q_a, q_b, result_a),
+        );
+
+        Self::color_4xf32_to_u32((result_a, result_r, result_g, result_b))
     }
 }
 
@@ -111,6 +166,9 @@ pub struct Sketch<S: State> {
     pub key_pressed_method: Option<fn(&mut Self, Key)>,
     pub key_released_method: Option<fn(&mut Self, Key)>,
 
+    loaded_fonts: Vec<(Font, String)>,
+    font_index: usize,
+
     pub state: S,
 }
 
@@ -125,7 +183,7 @@ impl<S: State> Sketch<S> {
 
         let pixels: Vec<u32> = vec![0; width*height];
 
-        Sketch {
+        let mut sketch = Sketch {
             window,
             pixels,
             width,
@@ -151,8 +209,27 @@ impl<S: State> Sketch<S> {
             mouse_released_method: None,
             key_pressed_method: None,
             key_released_method: None,
+
+            loaded_fonts: Vec::new(),
+            font_index: 0,
+
             state,
-        }
+        };
+
+        println!("LOADING FONT");
+
+        let tnr_file_path = "fonts/Times New Roman.ttf";
+        let times_new_roman = sketch.open_ttf_file(tnr_file_path);
+
+        let arial_file_path = "fonts/Arial.ttf";
+        let arial = sketch.open_ttf_file(arial_file_path);
+
+        sketch.loaded_fonts.push((times_new_roman, tnr_file_path.to_string()));
+        sketch.loaded_fonts.push((arial, arial_file_path.to_string()));
+
+        println!("FONT DONE");
+
+        sketch
     }
 
     // Private Methods
@@ -232,6 +309,13 @@ impl<S: State> Sketch<S> {
                 self.frame_count = self.frame_count + 1;
             }
         }
+    }
+
+    fn open_ttf_file(&self, file_path: &str) -> Font {
+        let mut file_content = Vec::new();
+        fs::File::open(file_path).unwrap().read_to_end(&mut file_content).unwrap();
+
+        Font::from_bytes(file_content, FontSettings::default()).unwrap()
     }
 
     /// Generates a mask based on current stroke mode
@@ -524,11 +608,14 @@ impl<S: State> Sketch<S> {
 
     /// Changes the color of the pixel at x,y
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
-        if x >= self.width as u32 || y >= self.height as u32 {
-            return;
-        }
         let index = x as usize + y as usize * self.width;
         self.pixels[index] = color;
+    }
+
+    fn mix_pixel(&mut self, x: u32, y: u32, color: u32) {
+        let index = x as usize + y as usize * self.width;
+        let new_color = RgbaColor::color_alpha_compose_color(self.pixels[index], color);
+        self.pixels[index] = new_color;
     }
 
     /// Fills the inside of a rectangle at x,y with side lengths w,h
@@ -590,6 +677,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Draws a linear spline based on the current shape construction, holes separate different chains
     fn linear_spline(&mut self, loops: bool) {
         let mut start = 0usize;
         let mut hole = 0usize;
@@ -734,6 +822,18 @@ impl<S: State> Sketch<S> {
         });
     }
 
+    pub fn image(&mut self, image_buffer: ImageBuffer<Rgb<u8>, Vec<u8>>, x: i32, y: i32) {
+        for i in 0..image_buffer.width() {
+            for j in 0..image_buffer.height() {
+                let (px, py) = (x + i as i32, y + j as i32);
+                if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
+
+                let (r, g, b, a) = image_buffer.get_pixel(px as u32, py as u32).channels4();
+                self.set_pixel(px as u32, py as u32, RgbaColor::rgba_color(r, g, b, a));
+            }
+        }
+    }
+
     /// Draws a line between points x0,y0 and x1,y1
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         let mask = self.generate_mask();
@@ -766,6 +866,65 @@ impl<S: State> Sketch<S> {
             ShapeType::LinearSpline {loops} => {
                 self.linear_spline(loops);
             }
+            ShapeType::CubicBezierSpline {loops} => {
+                todo!()
+            }
+        }
+    }
+
+    pub fn font(&mut self, font: FontMode) {
+        match font {
+            FontMode::TimesNewRoman => {
+                self.font_index = 0;
+            }
+            FontMode::Arial => {
+                self.font_index = 1;
+            }
+            FontMode::Custom { file_path } => {
+                let mut i = 0usize;
+                let fonts = &self.loaded_fonts;
+                for (_, fp) in fonts {
+                    if *fp == file_path {
+                        self.font_index = i;
+                        break;
+                    }
+                    i += 1;
+                }
+
+                let new_font = self.open_ttf_file(file_path.as_str());
+                self.loaded_fonts.push((new_font, file_path));
+                self.font_index = self.loaded_fonts.len() - 1;
+            }
+        }
+    }
+
+    pub fn text(&mut self, string: &str, x: i32, y: i32) {
+        let mut font = self.loaded_fonts[self.font_index].0.clone();
+
+        let scale = 32.0;
+        let mut x_start = x;
+
+        for char in string.chars() {
+            let (metrics, pixels) = font.rasterize(char, scale);
+
+            for i in 0..metrics.width {
+                for j in 0..metrics.height {
+                    let index = j*metrics.width + i;
+                    let (px, py) = (x_start + i as i32, y + j as i32 - metrics.height as i32);
+                    if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
+
+                    let color_to_mix = RgbaColor::rgba_color(
+                        pixels[index],
+                        RgbaColor::color_red(self.fill_color.unwrap()),
+                        RgbaColor::color_green(self.fill_color.unwrap()),
+                        RgbaColor::color_blue(self.fill_color.unwrap()),
+                    );
+
+                    self.mix_pixel(px as u32, py as u32, color_to_mix);
+                }
+            }
+
+            x_start += metrics.advance_width as i32;
         }
     }
 }
@@ -785,7 +944,11 @@ mod tests {
     fn setup(sketch: &mut Sketch<MyState>) {
         println!("SETUP WAS CALLED");
         sketch.framerate(60);
-        sketch.name("Example Sketch")
+        sketch.name("Example Sketch");
+
+        let mix = RgbaColor::color_alpha_compose_color(RgbaColor::rgba_color(255, 50, 10, 10), RgbaColor::rgba_color(255, 10, 10, 50));
+        let (a, r, g, b) = (RgbaColor::color_alpha(mix), RgbaColor::color_red(mix), RgbaColor::color_green(mix), RgbaColor::color_blue(mix));
+        println!("mixing (255,50,10,10) with (255, 10, 10, 50) : ({a},{r},{g},{b})");
     }
 
     fn draw(sketch: &mut Sketch<MyState>) {
@@ -795,29 +958,35 @@ mod tests {
 
         sketch.background(RgbaColor::greyscale_color(50));
 
-        sketch.stroke(RgbaColor::greyscale_color(255));
-        sketch.stroke_weight(3);
-        sketch.fill(0);
+        sketch.fill(RgbaColor::greyscale_color(255));
 
-        sketch.begin_shape(ShapeType::Polygon);
-        {
-            for i in 0..10 {
-                let angle: f32 = std::f32::consts::PI / 5f32  * i as f32;
-                let (x, y) = (320f32 + 200f32 * angle.cos(), 240f32 + 200f32 * angle.sin());
-                sketch.vertex(x as i32, y as i32);
-            }
-            sketch.begin_hole();
-            for i in 0..4 {
-                let angle: f32 = std::f32::consts::PI / 2f32  * i as f32;
-                let (x, y) = (320f32 + 100f32 * angle.cos(), 240f32 + 100f32 * angle.sin());
-                sketch.vertex(x as i32, y as i32);
-            }
-        }
-        sketch.end_shape();
+        sketch.font(FontMode::Arial);
+        sketch.text("Hello : 1234567890", 50, 50);
+
+        // sketch.stroke(RgbaColor::greyscale_color(255));
+        // sketch.stroke_weight(3);
+        // sketch.fill(0);
+        //
+        // sketch.begin_shape(ShapeType::Polygon);
+        // {
+        //     for i in 0..10 {
+        //         let angle: f32 = std::f32::consts::PI / 5f32  * i as f32;
+        //         let (x, y) = (320f32 + 200f32 * angle.cos(), 240f32 + 200f32 * angle.sin());
+        //         sketch.vertex(x as i32, y as i32);
+        //     }
+        //     sketch.begin_hole();
+        //     for i in 0..4 {
+        //         let angle: f32 = std::f32::consts::PI / 2f32  * i as f32;
+        //         let (x, y) = (320f32 + 100f32 * angle.cos(), 240f32 + 100f32 * angle.sin());
+        //         sketch.vertex(x as i32, y as i32);
+        //     }
+        // }
+        // sketch.end_shape();
     }
 
     #[test]
     fn testing() {
+        println!("START");
         let mut state = MyState::default();
         let mut sketch = Sketch::<MyState>::from_size(640, 480, state);
 
