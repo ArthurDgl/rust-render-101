@@ -5,7 +5,7 @@ use image::{ImageBuffer, Pixel, Rgb, Rgba};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
 use earcutr;
-use fontdue::{Font, FontSettings};
+use fontdue::{Font, FontSettings, Metrics};
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -54,7 +54,7 @@ impl RgbaColor {
     }
 
     /// Creates rgba value based on 4 u8 values
-    pub fn rgba_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
+    pub fn argb_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
     }
 
@@ -88,7 +88,7 @@ impl RgbaColor {
     }
 
     fn color_4xf32_to_u32(color: (f32, f32, f32, f32)) -> u32 {
-        RgbaColor::rgba_color(
+        RgbaColor::argb_color(
             (color.0 * 255f32) as u8,
             (color.1 * 255f32) as u8,
             (color.2 * 255f32) as u8,
@@ -110,7 +110,7 @@ impl RgbaColor {
 
         let result_a = Self::alpha_compose_alpha(p_a, q_a);
         if result_a <= 0.0001f32 {
-            return RgbaColor::rgba_color(0, 0, 0, 0);
+            return RgbaColor::argb_color(0, 0, 0, 0);
         }
 
         let (result_r, result_g, result_b) = (
@@ -181,7 +181,7 @@ impl<S: State> Sketch<S> {
                 panic!("Unable to open window: {}", e);
             });
 
-        let pixels: Vec<u32> = vec![0; width*height];
+        let pixels: Vec<u32> = vec![0u32; width*height];
 
         let mut sketch = Sketch {
             window,
@@ -331,9 +331,7 @@ impl<S: State> Sketch<S> {
     fn apply_mask_as_stroke(&mut self, x: i32, y: i32, mask: &Vec<(i8, i8)>) {
         for (i, j) in mask {
             let (xi, yj) = (x + *i as i32, y + *j as i32);
-            if xi >= 0 && yj >= 0 {
-                self.stroke_pixel(xi as u32, yj as u32);
-            }
+            self.stroke_pixel(xi, yj);
         }
     }
 
@@ -473,11 +471,9 @@ impl<S: State> Sketch<S> {
         for xi in -r..=r {
             for yi in -r..=r {
                 if xi*xi + yi*yi > r*r {continue;}
-
                 let (x, y) = (xc + xi, yc + yi);
-                if x >= 0 && y >= 0 {
-                    self.fill_pixel(x as u32, y as u32);
-                }
+
+                self.fill_pixel(x, y);
             }
         }
     }
@@ -539,9 +535,7 @@ impl<S: State> Sketch<S> {
         for i in 0..max_right_x.len() {
             let y = i as i32 + y0;
             for x in min_left_x[i]..=max_right_x[i] {
-                if x >= 0 && y >= 0 {
-                    self.set_pixel(x as u32, y as u32, self.fill_color.expect(""));
-                }
+                self.change_pixel(x, y, self.fill_color.unwrap());
             }
         }
     }
@@ -570,9 +564,7 @@ impl<S: State> Sketch<S> {
         for i in 0..max_right_x.len() {
             let y = i as i32 + y1;
             for x in min_left_x[i]..=max_right_x[i] {
-                if x >= 0 && y >= 0 {
-                    self.set_pixel(x as u32, y as u32, self.fill_color.expect(""));
-                }
+                self.change_pixel(x, y, self.fill_color.unwrap());
             }
         }
     }
@@ -606,6 +598,19 @@ impl<S: State> Sketch<S> {
         self.line(x2, y2, x1, y1);
     }
 
+    fn change_pixel(&mut self, x: i32, y: i32, color: u32) {
+        if x < 0 ||y < 0 ||x >= self.width as i32 || y >= self.height as i32 {return;}
+
+        let (x, y) = (x as u32, y as u32);
+
+        if RgbaColor::color_alpha(color) == 255 {
+            self.set_pixel(x, y, color);
+        }
+        else {
+            self.mix_pixel(x, y, color);
+        }
+    }
+
     /// Changes the color of the pixel at x,y
     fn set_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
@@ -619,7 +624,7 @@ impl<S: State> Sketch<S> {
     }
 
     /// Fills the inside of a rectangle at x,y with side lengths w,h
-    fn rect_fill(&mut self, x: u32, y: u32, w: u32, h: u32) {
+    fn rect_fill(&mut self, x: i32, y: i32, w: i32, h: i32) {
         for i in x..(x+w) {
             for j in y..(y+h) {
                 self.fill_pixel(i, j);
@@ -628,11 +633,7 @@ impl<S: State> Sketch<S> {
     }
 
     /// Strokes the 4 sides of a rectangle at x,y with side lengths w,h
-    fn rect_stroke(&mut self, x: u32, y: u32, w: u32, h: u32) {
-        let x = x as i32;
-        let y = y as i32;
-        let w = w as i32;
-        let h = h as i32;
+    fn rect_stroke(&mut self, x: i32, y: i32, w: i32, h: i32) {
         self.line(x, y, x+w, y);
         self.line(x, y, x, y+h);
         self.line(x, y+h, x+w, y+h);
@@ -754,21 +755,21 @@ impl<S: State> Sketch<S> {
     }
 
     /// Applies current fill color to pixel at x,y
-    pub fn fill_pixel(&mut self, x: u32, y: u32) {
+    pub fn fill_pixel(&mut self, x: i32, y: i32) {
          if let Some(color) = self.fill_color {
-             self.set_pixel(x, y, color);
+             self.change_pixel(x, y, color);
          }
     }
 
     /// Applies current stroke color to pixel at x,y
-    pub fn stroke_pixel(&mut self, x: u32, y: u32) {
+    pub fn stroke_pixel(&mut self, x: i32, y: i32) {
         if let Some(color) = self.stroke_color {
-            self.set_pixel(x, y, color);
+            self.change_pixel(x, y, color);
         }
     }
 
     /// Draws a rectangle at x,y with side lengths w,h
-    pub fn rect(&mut self, x: u32, y: u32, w: u32, h: u32) {
+    pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
         if self.fill_color.is_some() {
             self.rect_fill(x, y, w, h);
         }
@@ -799,11 +800,8 @@ impl<S: State> Sketch<S> {
 
     /// Fills the window with given color
     pub fn background(&mut self, color: u32) {
-        for i in 0..self.width as u32 {
-            for j in 0..self.height as u32 {
-                self.set_pixel(i, j, color);
-            }
-        }
+        let new_frame: Vec<u32> = vec![color;self.width*self.height];
+        self.pixels = new_frame;
     }
 
     /// Saves a png screenshot of the window
@@ -828,8 +826,8 @@ impl<S: State> Sketch<S> {
                 let (px, py) = (x + i as i32, y + j as i32);
                 if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
 
-                let (r, g, b, a) = image_buffer.get_pixel(px as u32, py as u32).channels4();
-                self.set_pixel(px as u32, py as u32, RgbaColor::rgba_color(r, g, b, a));
+                let (r, g, b, a) = image_buffer.get_pixel(i, j).channels4();
+                self.change_pixel(px, py, RgbaColor::argb_color(a, r, g, b));
             }
         }
     }
@@ -898,6 +896,25 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    fn render_char(&mut self, metrics: Metrics, pixels: Vec<u8>, x_start: i32, y_start : i32) {
+        for i in 0..metrics.width {
+            for j in 0..metrics.height {
+                let index = j*metrics.width + i;
+                let (px, py) = (x_start + metrics.xmin + i as i32, y_start + j as i32 - metrics.height as i32 - metrics.ymin);
+                if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
+
+                let color_to_mix = RgbaColor::argb_color(
+                    pixels[index],
+                    RgbaColor::color_red(self.fill_color.unwrap()),
+                    RgbaColor::color_green(self.fill_color.unwrap()),
+                    RgbaColor::color_blue(self.fill_color.unwrap()),
+                );
+
+                self.mix_pixel(px as u32, py as u32, color_to_mix);
+            }
+        }
+    }
+
     pub fn text(&mut self, string: &str, x: i32, y: i32) {
         let mut font = self.loaded_fonts[self.font_index].0.clone();
 
@@ -908,22 +925,7 @@ impl<S: State> Sketch<S> {
         for char in string.chars() {
             let (metrics, pixels) = font.rasterize(char, scale);
 
-            for i in 0..metrics.width {
-                for j in 0..metrics.height {
-                    let index = j*metrics.width + i;
-                    let (px, py) = (x_start + metrics.xmin + i as i32, y_start + j as i32 - metrics.height as i32 - metrics.ymin);
-                    if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
-
-                    let color_to_mix = RgbaColor::rgba_color(
-                        pixels[index],
-                        RgbaColor::color_red(self.fill_color.unwrap()),
-                        RgbaColor::color_green(self.fill_color.unwrap()),
-                        RgbaColor::color_blue(self.fill_color.unwrap()),
-                    );
-
-                    self.mix_pixel(px as u32, py as u32, color_to_mix);
-                }
-            }
+            self.render_char(metrics, pixels, x_start, y_start);
 
             x_start += metrics.advance_width as i32;
             y_start += metrics.advance_height as i32;
@@ -934,6 +936,7 @@ impl<S: State> Sketch<S> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
     use super::*;
 
     #[derive(Default)]
@@ -947,10 +950,6 @@ mod tests {
         println!("SETUP WAS CALLED");
         sketch.framerate(60);
         sketch.name("Example Sketch");
-
-        let mix = RgbaColor::color_alpha_compose_color(RgbaColor::rgba_color(255, 50, 10, 10), RgbaColor::rgba_color(255, 10, 10, 50));
-        let (a, r, g, b) = (RgbaColor::color_alpha(mix), RgbaColor::color_red(mix), RgbaColor::color_green(mix), RgbaColor::color_blue(mix));
-        println!("mixing (255,50,10,10) with (255, 10, 10, 50) : ({a},{r},{g},{b})");
     }
 
     fn draw(sketch: &mut Sketch<MyState>) {
@@ -958,12 +957,45 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
+        let mut start = std::time::SystemTime::now();
+        let mut lapse = 0f32;
+        let mut old = 0f32;
+        let mut now = 0f32;
+
         sketch.background(RgbaColor::greyscale_color(50));
+
+        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
+        lapse = now - old;
+        println!("Background took : {lapse}ms");
+        old = now;
+
+        sketch.fill(RgbaColor::argb_color(255, 255, 20, 20));
+        sketch.rect(100, 100, 200, 50);
+
+        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
+        lapse = now - old;
+        println!("Red took : {lapse}ms");
+        old = now;
 
         sketch.fill(RgbaColor::greyscale_color(255));
 
         sketch.font(FontMode::TimesNewRoman);
         sketch.text("Hello : 1234567890", 50, 50);
+
+        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
+        lapse = now - old;
+        println!("Text took : {lapse}ms");
+        old = now;
+
+        sketch.fill(RgbaColor::argb_color(128, 20, 255, 20));
+        sketch.rect(sketch.mouse_x as i32, sketch.mouse_y as i32, 150, 50);
+
+        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
+        lapse = now - old;
+        println!("Green took : {lapse}ms");
+        old = now;
+
+        sketch.no_loop();
 
         // sketch.stroke(RgbaColor::greyscale_color(255));
         // sketch.stroke_weight(3);
