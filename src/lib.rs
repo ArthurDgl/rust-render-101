@@ -903,6 +903,7 @@ impl<S: State> Sketch<S> {
 
         let scale = 32.0;
         let mut x_start = x;
+        let mut y_start = y;
 
         for char in string.chars() {
             let (metrics, pixels) = font.rasterize(char, scale);
@@ -910,7 +911,7 @@ impl<S: State> Sketch<S> {
             for i in 0..metrics.width {
                 for j in 0..metrics.height {
                     let index = j*metrics.width + i;
-                    let (px, py) = (x_start + i as i32, y + j as i32 - metrics.height as i32);
+                    let (px, py) = (x_start + metrics.xmin + i as i32, y_start + j as i32 - metrics.height as i32 - metrics.ymin);
                     if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
 
                     let color_to_mix = RgbaColor::rgba_color(
@@ -925,6 +926,7 @@ impl<S: State> Sketch<S> {
             }
 
             x_start += metrics.advance_width as i32;
+            y_start += metrics.advance_height as i32;
         }
     }
 }
@@ -960,7 +962,7 @@ mod tests {
 
         sketch.fill(RgbaColor::greyscale_color(255));
 
-        sketch.font(FontMode::Arial);
+        sketch.font(FontMode::TimesNewRoman);
         sketch.text("Hello : 1234567890", 50, 50);
 
         // sketch.stroke(RgbaColor::greyscale_color(255));
