@@ -916,14 +916,15 @@ impl<S: State> Sketch<S> {
     }
 
     pub fn text(&mut self, string: &str, x: i32, y: i32) {
-        let mut font = self.loaded_fonts[self.font_index].0.clone();
-
         let scale = 32.0;
         let mut x_start = x;
         let mut y_start = y;
 
         for char in string.chars() {
-            let (metrics, pixels) = font.rasterize(char, scale);
+            let (metrics, pixels) = {
+                let mut font = &mut self.loaded_fonts[self.font_index].0;
+                font.rasterize(char, scale)
+            };
 
             self.render_char(metrics, pixels, x_start, y_start);
 
@@ -957,45 +958,18 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
-        let mut start = std::time::SystemTime::now();
-        let mut lapse = 0f32;
-        let mut old = 0f32;
-        let mut now = 0f32;
-
         sketch.background(RgbaColor::greyscale_color(50));
-
-        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
-        lapse = now - old;
-        println!("Background took : {lapse}ms");
-        old = now;
 
         sketch.fill(RgbaColor::argb_color(255, 255, 20, 20));
         sketch.rect(100, 100, 200, 50);
-
-        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
-        lapse = now - old;
-        println!("Red took : {lapse}ms");
-        old = now;
 
         sketch.fill(RgbaColor::greyscale_color(255));
 
         sketch.font(FontMode::TimesNewRoman);
         sketch.text("Hello : 1234567890", 50, 50);
 
-        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
-        lapse = now - old;
-        println!("Text took : {lapse}ms");
-        old = now;
-
         sketch.fill(RgbaColor::argb_color(128, 20, 255, 20));
-        sketch.rect(sketch.mouse_x as i32, sketch.mouse_y as i32, 150, 50);
-
-        now = start.elapsed().unwrap().as_secs_f32() * 1000f32;
-        lapse = now - old;
-        println!("Green took : {lapse}ms");
-        old = now;
-
-        sketch.no_loop();
+        sketch.rect(sketch.mouse_x as i32 - 75, sketch.mouse_y as i32 - 25, 150, 50);
 
         // sketch.stroke(RgbaColor::greyscale_color(255));
         // sketch.stroke_weight(3);
