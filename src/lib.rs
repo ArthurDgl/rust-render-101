@@ -1076,10 +1076,10 @@ mod tests {
         start.push((150, 100));
 
         let mut end: Vec<(i32, i32)> = Vec::new();
-        end.push((450, 50));
-        end.push((450, 100));
-        end.push((450, 150));
         end.push((450, 200));
+        end.push((500, 200));
+        end.push((500, 250));
+        end.push((450, 250));
 
         let transition = Transition::initialize(
             EasingType::SmoothStep,
@@ -1091,7 +1091,7 @@ mod tests {
         sketch.state.transition = Some(transition);
 
         sketch.stroke(RgbaColor::greyscale_color(255));
-        sketch.stroke_weight(3);
+        sketch.stroke_weight(2);
         sketch.stroke_mode(StrokeMode::Circle);
     }
 
@@ -1103,7 +1103,7 @@ mod tests {
         sketch.background(RgbaColor::greyscale_color(50));
 
 
-        if let mut transition = sketch.state.transition.take().unwrap() {
+        if let Some(mut transition) = sketch.state.transition.take() {
             sketch.begin_shape(ShapeType::LinearSpline {loops: false});
             let points = transition.get_current_points();
             for &(x, y) in points {
