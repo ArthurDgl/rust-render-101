@@ -1,11 +1,10 @@
-use std::cmp::max;
-use std::fs;
-use std::io::Read;
-use image::{ImageBuffer, Pixel, Rgb, Rgba};
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
-use rand;
 use earcutr;
 use fontdue::{Font, FontSettings, Metrics};
+use image::{ImageBuffer, Pixel, Rgb};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
+use rand;
+use std::fs;
+use std::io::Read;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -105,21 +104,21 @@ impl RgbaColor {
     }
 
     fn color_alpha_compose_color(color_p: u32, color_q: u32) -> u32 {
-        let (p_a, p_r, p_g, p_b) = Self::color_u32_to_4xf32(color_p);
-        let (q_a, q_r, q_g, q_b) = Self::color_u32_to_4xf32(color_q);
+        let (p_a, p_r, p_g, p_b) = RgbaColor::color_u32_to_4xf32(color_p);
+        let (q_a, q_r, q_g, q_b) = RgbaColor::color_u32_to_4xf32(color_q);
 
-        let result_a = Self::alpha_compose_alpha(p_a, q_a);
+        let result_a = RgbaColor::alpha_compose_alpha(p_a, q_a);
         if result_a <= 0.0001f32 {
             return RgbaColor::argb_color(0, 0, 0, 0);
         }
 
         let (result_r, result_g, result_b) = (
-            Self::alpha_compose_channel(p_a, p_r, q_a, q_r, result_a),
-            Self::alpha_compose_channel(p_a, p_g, q_a, q_g, result_a),
-            Self::alpha_compose_channel(p_a, p_b, q_a, q_b, result_a),
+            RgbaColor::alpha_compose_channel(p_a, p_r, q_a, q_r, result_a),
+            RgbaColor::alpha_compose_channel(p_a, p_g, q_a, q_g, result_a),
+            RgbaColor::alpha_compose_channel(p_a, p_b, q_a, q_b, result_a),
         );
 
-        Self::color_4xf32_to_u32((result_a, result_r, result_g, result_b))
+        RgbaColor::color_4xf32_to_u32((result_a, result_r, result_g, result_b))
     }
 }
 
@@ -937,7 +936,6 @@ impl<S: State> Sketch<S> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
     use super::*;
 
     #[derive(Default)]
@@ -949,7 +947,7 @@ mod tests {
 
     fn setup(sketch: &mut Sketch<MyState>) {
         println!("SETUP WAS CALLED");
-        sketch.framerate(60);
+        // sketch.framerate(60);
         sketch.name("Example Sketch");
     }
 
@@ -966,10 +964,8 @@ mod tests {
         sketch.fill(RgbaColor::greyscale_color(255));
 
         sketch.font(FontMode::TimesNewRoman);
-        sketch.text("Hello : 1234567890", 50, 50);
-
-        sketch.fill(RgbaColor::argb_color(128, 20, 255, 20));
-        sketch.rect(sketch.mouse_x as i32 - 75, sketch.mouse_y as i32 - 25, 150, 50);
+        let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
+        sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
 
         // sketch.stroke(RgbaColor::greyscale_color(255));
         // sketch.stroke_weight(3);
