@@ -5,6 +5,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
 use std::fs;
 use std::io::Read;
+use std::time::Duration;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
 
@@ -121,6 +122,124 @@ impl RgbaColor {
         RgbaColor::color_4xf32_to_u32((result_a, result_r, result_g, result_b))
     }
 }
+
+enum EasingType {
+    Linear,
+    SmoothStep,
+    QuadIn,
+    QuadOut,
+}
+
+impl EasingType {
+    fn ease(&self, t: f32) -> f32 {
+        match self {
+            EasingType::Linear => t,
+            EasingType::SmoothStep => {
+                let t2 = t * t;
+                -2f32 * t2 * t + 3f32 * t2
+            }
+            EasingType::QuadIn => t * t,
+            EasingType::QuadOut => -t * t + 2f32 * t,
+        }
+    }
+}
+
+#[derive(Clone)]
+enum TransitionTarget {
+    Points { points: Vec<(i32, i32)> },
+    Point { point: (i32, i32) },
+}
+impl TransitionTarget {
+    fn interpolate(t: f32, start: &Self, end: &Self) -> Self {
+        match (start, end) {
+            (
+                TransitionTarget::Points { points: start_points },
+                TransitionTarget::Points { points: end_points },
+            ) => {
+                let new_points = start_points
+                    .iter()
+                    .zip(end_points.iter())
+                    .map(|(&(sx, sy), &(ex, ey))| {
+                        (
+                            (sx as f32 * (1f32 - t) + ex as f32 * t) as i32,
+                            (sy as f32 * (1f32 - t) + ey as f32 * t) as i32,
+                        )
+                    })
+                    .collect();
+
+                TransitionTarget::Points { points: new_points }
+            }
+            (
+                TransitionTarget::Point { point: start_point },
+                TransitionTarget::Point { point: end_point },
+            ) => TransitionTarget::Point {
+                point: (
+                    (start_point.0 as f32 * (1f32 - t) + end_point.0 as f32 * t) as i32,
+                    (start_point.1 as f32 * (1f32 - t) + end_point.1 as f32 * t) as i32,
+                ),
+            },
+            _ => {
+                panic!("Error: 'start' and 'end' parameters must be the same TransitionTarget type!")
+            }
+        }
+    }
+}
+
+struct Transition {
+    duration: f32,
+    elapsed: f32,
+    easing: EasingType,
+    start_state: TransitionTarget,
+    end_state: TransitionTarget,
+    current_state: TransitionTarget,
+}
+
+impl Transition {
+    fn initialize(
+        easing: EasingType,
+        duration: f32,
+        start_state: TransitionTarget,
+        end_state: TransitionTarget,
+    ) -> Self {
+        let current_state = start_state.clone();
+        Transition {
+            easing,
+            duration,
+            elapsed: 0.0,
+            start_state,
+            end_state,
+            current_state,
+        }
+    }
+
+    fn step(&mut self, delta_time: f32) {
+        self.elapsed += delta_time;
+        let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
+        let eased_t = self.easing.ease(t);
+        self.current_state =
+            TransitionTarget::interpolate(eased_t, &self.start_state, &self.end_state);
+    }
+
+    fn is_finished(&self) -> bool {
+        self.elapsed >= self.duration
+    }
+
+    fn get_current_points(&self) -> &Vec<(i32, i32)> {
+        match &self.current_state {
+            TransitionTarget::Points { points } => { points }
+            _ => {panic!("Error: called get_points() on transition with non-points target !")}
+        }
+    }
+
+    fn get_current_point(&self) -> &(i32, i32) {
+        match &self.current_state {
+            TransitionTarget::Point { point } => { point }
+            _ => {panic!("Error: called get_point() on transition with non-point target !")}
+        }
+    }
+}
+
+
 
 pub struct Geometry {}
 
@@ -940,15 +1059,40 @@ mod tests {
 
     #[derive(Default)]
     struct MyState {
-
+        transition: Option<Transition>,
     }
 
     impl State for MyState {}
 
     fn setup(sketch: &mut Sketch<MyState>) {
         println!("SETUP WAS CALLED");
-        // sketch.framerate(60);
+        sketch.framerate(60);
         sketch.name("Example Sketch");
+
+        let mut start: Vec<(i32, i32)> = Vec::new();
+        start.push((50, 50));
+        start.push((100, 50));
+        start.push((100, 100));
+        start.push((150, 100));
+
+        let mut end: Vec<(i32, i32)> = Vec::new();
+        end.push((450, 50));
+        end.push((450, 100));
+        end.push((450, 150));
+        end.push((450, 200));
+
+        let transition = Transition::initialize(
+            EasingType::SmoothStep,
+            3f32,
+            TransitionTarget::Points {points: start},
+            TransitionTarget::Points {points: end},
+        );
+
+        sketch.state.transition = Some(transition);
+
+        sketch.stroke(RgbaColor::greyscale_color(255));
+        sketch.stroke_weight(3);
+        sketch.stroke_mode(StrokeMode::Circle);
     }
 
     fn draw(sketch: &mut Sketch<MyState>) {
@@ -958,14 +1102,32 @@ mod tests {
 
         sketch.background(RgbaColor::greyscale_color(50));
 
-        sketch.fill(RgbaColor::argb_color(255, 255, 20, 20));
-        sketch.rect(100, 100, 200, 50);
 
-        sketch.fill(RgbaColor::greyscale_color(255));
+        if let mut transition = sketch.state.transition.take().unwrap() {
+            sketch.begin_shape(ShapeType::LinearSpline {loops: false});
+            let points = transition.get_current_points();
+            for &(x, y) in points {
+                sketch.vertex(x, y);
+            }
+            sketch.end_shape();
 
-        sketch.font(FontMode::TimesNewRoman);
-        let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
-        sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
+            if sketch.frame_count > 60 && !transition.is_finished() {
+                transition.step(sketch.delta_time);
+            }
+            sketch.state.transition = Some(transition);
+        }
+
+
+        // sketch.fill(RgbaColor::argb_color(255, 255, 20, 20));
+        // sketch.rect(100, 100, 200, 50);
+        //
+        // sketch.fill(RgbaColor::greyscale_color(255));
+        //
+        // sketch.font(FontMode::TimesNewRoman);
+        // let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
+        // sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
+
+
 
         // sketch.stroke(RgbaColor::greyscale_color(255));
         // sketch.stroke_weight(3);
