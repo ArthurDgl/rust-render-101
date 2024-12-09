@@ -123,7 +123,7 @@ impl RgbaColor {
     }
 }
 
-enum EasingType {
+pub enum EasingType {
     Linear,
     SmoothStep,
     QuadIn,
@@ -145,7 +145,7 @@ impl EasingType {
 }
 
 #[derive(Clone)]
-enum TransitionTarget {
+pub enum TransitionTarget {
     Points { points: Vec<(i32, i32)> },
     Point { point: (i32, i32) },
 }
@@ -185,7 +185,7 @@ impl TransitionTarget {
     }
 }
 
-struct Transition {
+pub struct Transition {
     duration: f32,
     elapsed: f32,
     easing: EasingType,
@@ -195,7 +195,7 @@ struct Transition {
 }
 
 impl Transition {
-    fn initialize(
+    pub fn initialize(
         easing: EasingType,
         duration: f32,
         start_state: TransitionTarget,
@@ -212,7 +212,7 @@ impl Transition {
         }
     }
 
-    fn step(&mut self, delta_time: f32) {
+    pub fn step(&mut self, delta_time: f32) {
         self.elapsed += delta_time;
         let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
         let eased_t = self.easing.ease(t);
@@ -220,18 +220,18 @@ impl Transition {
             TransitionTarget::interpolate(eased_t, &self.start_state, &self.end_state);
     }
 
-    fn is_finished(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         self.elapsed >= self.duration
     }
 
-    fn get_current_points(&self) -> &Vec<(i32, i32)> {
+    pub fn get_current_points(&self) -> &Vec<(i32, i32)> {
         match &self.current_state {
             TransitionTarget::Points { points } => { points }
             _ => {panic!("Error: called get_points() on transition with non-points target !")}
         }
     }
 
-    fn get_current_point(&self) -> &(i32, i32) {
+    pub fn get_current_point(&self) -> &(i32, i32) {
         match &self.current_state {
             TransitionTarget::Point { point } => { point }
             _ => {panic!("Error: called get_point() on transition with non-point target !")}
