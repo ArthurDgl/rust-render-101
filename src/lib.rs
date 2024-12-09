@@ -232,6 +232,20 @@ impl Transition {
         }
     }
 
+    pub fn get_start_points(&self) -> &Vec<(i32, i32)> {
+        match &self.start_state {
+            TransitionTarget::Points { points } => { points }
+            _ => {panic!("Error: called get_points() on transition with non-points target !")}
+        }
+    }
+
+    pub fn get_end_points(&self) -> &Vec<(i32, i32)> {
+        match &self.end_state {
+            TransitionTarget::Points { points } => { points }
+            _ => {panic!("Error: called get_points() on transition with non-points target !")}
+        }
+    }
+
     pub fn get_current_point(&self) -> &(i32, i32) {
         match &self.current_state {
             TransitionTarget::Point { point } => { point }
