@@ -226,7 +226,7 @@ impl Transition {
     }
 
     pub fn reset(&mut self) {
-        self.duration = 0.0;
+        self.elapsed = 0.0;
     }
 
     pub fn reset_new(&mut self, new_start: TransitionTarget, new_end: TransitionTarget) {
