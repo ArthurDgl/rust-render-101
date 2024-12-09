@@ -225,6 +225,17 @@ impl Transition {
         self.elapsed >= self.duration
     }
 
+    pub fn reset(&mut self) {
+        self.duration = 0.0;
+    }
+
+    pub fn reset_new(&mut self, new_start: TransitionTarget, new_end: TransitionTarget) {
+        self.reset();
+
+        self.start_state = new_start;
+        self.end_state = new_end;
+    }
+
     pub fn get_current_points(&self) -> &Vec<(i32, i32)> {
         match &self.current_state {
             TransitionTarget::Points { points } => { points }
