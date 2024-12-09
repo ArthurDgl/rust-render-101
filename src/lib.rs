@@ -404,8 +404,8 @@ impl<S: State> Sketch<S> {
         }
     }
 
-    /// INTERNAL : main loop of the Sketch
-    fn run(&mut self) {
+    /// main loop of the Sketch
+    pub fn run(&mut self) {
         self.setup_method.expect("Setup method was not set !")(self);
 
         let mut now = std::time::SystemTime::now();
