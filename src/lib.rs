@@ -5,6 +5,7 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode};
 use rand;
 use std::fs;
 use std::io::Read;
+use std::path::Path;
 use std::time::Duration;
 
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
@@ -336,14 +337,16 @@ impl<S: State> Sketch<S> {
 
         println!("LOADING FONT");
 
-        let tnr_file_path = "fonts/Times New Roman.ttf";
-        let times_new_roman = sketch.open_ttf_file(tnr_file_path);
+        let tnr_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Times New Roman.ttf");
+        let tnr_file_path_str = tnr_file_path.to_str().unwrap();
+        let times_new_roman = sketch.open_ttf_file(tnr_file_path_str);
 
-        let arial_file_path = "fonts/Arial.ttf";
-        let arial = sketch.open_ttf_file(arial_file_path);
+        let arial_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Arial.ttf");
+        let arial_file_path_str = arial_file_path.to_str().unwrap();
+        let arial = sketch.open_ttf_file(arial_file_path_str);
 
-        sketch.loaded_fonts.push((times_new_roman, tnr_file_path.to_string()));
-        sketch.loaded_fonts.push((arial, arial_file_path.to_string()));
+        sketch.loaded_fonts.push((times_new_roman, tnr_file_path_str.to_string()));
+        sketch.loaded_fonts.push((arial, arial_file_path_str.to_string()));
 
         println!("FONT DONE");
 
@@ -1123,9 +1126,9 @@ mod tests {
         //
         // sketch.fill(RgbaColor::greyscale_color(255));
         //
-        // sketch.font(FontMode::TimesNewRoman);
-        // let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
-        // sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
+        sketch.font(FontMode::TimesNewRoman);
+        let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
+        sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
 
 
 
