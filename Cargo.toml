@@ -1,6 +1,6 @@
 [package]
 name = "rust_render_101"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Arthur Dugnolle arthur.dugnolle@gmail.com"]
 license = "MIT"
