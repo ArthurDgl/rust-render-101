@@ -79,6 +79,7 @@ impl RgbaColor {
         color as u8
     }
 
+    /// Converts a u32 color to a tuple of 4 f32's between 0 and 1
     fn color_u32_to_4xf32(color: u32) -> (f32, f32, f32, f32) {
         (
             RgbaColor::color_alpha(color) as f32 / 255f32,
@@ -88,6 +89,7 @@ impl RgbaColor {
         )
     }
 
+    /// Converts a tuple of 4 f32's to a u32 color
     fn color_4xf32_to_u32(color: (f32, f32, f32, f32)) -> u32 {
         RgbaColor::argb_color(
             (color.0 * 255f32) as u8,
@@ -97,14 +99,17 @@ impl RgbaColor {
         )
     }
 
+    /// Performs the alpha compose operation in the alpha channels
     fn alpha_compose_alpha(p_a: f32, q_a: f32) -> f32 {
         p_a + q_a - p_a * q_a
     }
 
+    /// Performs the alpha compose operation on the color channels
     fn alpha_compose_channel(p_a: f32, p_c: f32, q_a: f32, q_c: f32, r_a: f32) -> f32 {
         (p_c * p_a + q_c * q_a - p_c * p_a * q_a) / r_a
     }
 
+    /// Entire pipeline of composing 2 u32 colors using alpha compose operation
     fn color_alpha_compose_color(color_p: u32, color_q: u32) -> u32 {
         let (p_a, p_r, p_g, p_b) = RgbaColor::color_u32_to_4xf32(color_p);
         let (q_a, q_r, q_g, q_b) = RgbaColor::color_u32_to_4xf32(color_q);
@@ -132,6 +137,7 @@ pub enum EasingType {
 }
 
 impl EasingType {
+    /// Easing functions [0, 1] -> [0, 1], assumes linear input
     fn ease(&self, t: f32) -> f32 {
         match self {
             EasingType::Linear => t,
@@ -151,6 +157,7 @@ pub enum TransitionTarget {
     Point { point: (i32, i32) },
 }
 impl TransitionTarget {
+    /// Performs interpolation, after easing function
     fn interpolate(t: f32, start: &Self, end: &Self) -> Self {
         match (start, end) {
             (
@@ -196,6 +203,7 @@ pub struct Transition {
 }
 
 impl Transition {
+    /// Creates a transition
     pub fn initialize(
         easing: EasingType,
         duration: f32,
@@ -213,6 +221,7 @@ impl Transition {
         }
     }
 
+    /// Main access point for the Transition : updates the progress based on delta time
     pub fn step(&mut self, delta_time: f32) {
         self.elapsed += delta_time;
         let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
@@ -221,14 +230,17 @@ impl Transition {
             TransitionTarget::interpolate(eased_t, &self.start_state, &self.end_state);
     }
 
+    /// Returns true if the Transition is finished (elapsed time reached duration)
     pub fn is_finished(&self) -> bool {
         self.elapsed >= self.duration
     }
 
+    /// Resets elpased time to 0
     pub fn reset(&mut self) {
         self.elapsed = 0.0;
     }
 
+    /// Resets Transition and changes start and end targets
     pub fn reset_new(&mut self, new_start: TransitionTarget, new_end: TransitionTarget) {
         self.reset();
 
@@ -236,6 +248,7 @@ impl Transition {
         self.end_state = new_end;
     }
 
+    /// Returns the current state if target is points vec
     pub fn get_current_points(&self) -> &Vec<(i32, i32)> {
         match &self.current_state {
             TransitionTarget::Points { points } => { points }
@@ -243,6 +256,7 @@ impl Transition {
         }
     }
 
+    /// Returns the start state if target is points vec
     pub fn get_start_points(&self) -> &Vec<(i32, i32)> {
         match &self.start_state {
             TransitionTarget::Points { points } => { points }
@@ -250,6 +264,7 @@ impl Transition {
         }
     }
 
+    /// Returns the end state if target is points vec
     pub fn get_end_points(&self) -> &Vec<(i32, i32)> {
         match &self.end_state {
             TransitionTarget::Points { points } => { points }
@@ -257,6 +272,7 @@ impl Transition {
         }
     }
 
+    /// Returns current state if target is single point
     pub fn get_current_point(&self) -> &(i32, i32) {
         match &self.current_state {
             TransitionTarget::Point { point } => { point }
@@ -360,20 +376,18 @@ impl<S: State> Sketch<S> {
             state,
         };
 
-        println!("LOADING FONT");
+        { // Loads default fonts (TimesNewRoman and Arial)
+            let tnr_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Times New Roman.ttf");
+            let tnr_file_path_str = tnr_file_path.to_str().unwrap();
+            let times_new_roman = sketch.open_ttf_file(tnr_file_path_str);
 
-        let tnr_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Times New Roman.ttf");
-        let tnr_file_path_str = tnr_file_path.to_str().unwrap();
-        let times_new_roman = sketch.open_ttf_file(tnr_file_path_str);
+            let arial_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Arial.ttf");
+            let arial_file_path_str = arial_file_path.to_str().unwrap();
+            let arial = sketch.open_ttf_file(arial_file_path_str);
 
-        let arial_file_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Arial.ttf");
-        let arial_file_path_str = arial_file_path.to_str().unwrap();
-        let arial = sketch.open_ttf_file(arial_file_path_str);
-
-        sketch.loaded_fonts.push((times_new_roman, tnr_file_path_str.to_string()));
-        sketch.loaded_fonts.push((arial, arial_file_path_str.to_string()));
-
-        println!("FONT DONE");
+            sketch.loaded_fonts.push((times_new_roman, tnr_file_path_str.to_string()));
+            sketch.loaded_fonts.push((arial, arial_file_path_str.to_string()));
+        }
 
         sketch
     }
@@ -457,6 +471,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Loads a Font from a ttf file path
     fn open_ttf_file(&self, file_path: &str) -> Font {
         let mut file_content = Vec::new();
         fs::File::open(file_path).unwrap().read_to_end(&mut file_content).unwrap();
@@ -744,6 +759,7 @@ impl<S: State> Sketch<S> {
         self.line(x2, y2, x1, y1);
     }
 
+    /// General method for changing the color of a pixel (includes bound checks)
     fn change_pixel(&mut self, x: i32, y: i32, color: u32) {
         if x < 0 ||y < 0 ||x >= self.width as i32 || y >= self.height as i32 {return;}
 
@@ -763,6 +779,7 @@ impl<S: State> Sketch<S> {
         self.pixels[index] = color;
     }
 
+    /// Changes the color of a pixel using alpha compose with previous color
     fn mix_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
         let new_color = RgbaColor::color_alpha_compose_color(self.pixels[index], color);
@@ -966,6 +983,7 @@ impl<S: State> Sketch<S> {
         });
     }
 
+    /// Draws image from ImageBuffer
     pub fn image(&mut self, image_buffer: ImageBuffer<Rgb<u8>, Vec<u8>>, x: i32, y: i32) {
         for i in 0..image_buffer.width() {
             for j in 0..image_buffer.height() {
@@ -1016,6 +1034,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Changes the current font
     pub fn font(&mut self, font: FontMode) {
         match font {
             FontMode::TimesNewRoman => {
@@ -1042,6 +1061,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Renders a single character
     fn render_char(&mut self, metrics: Metrics, pixels: Vec<u8>, x_start: i32, y_start : i32) {
         for i in 0..metrics.width {
             for j in 0..metrics.height {
@@ -1061,6 +1081,7 @@ impl<S: State> Sketch<S> {
         }
     }
 
+    /// Renders a full string
     pub fn text(&mut self, string: &str, x: i32, y: i32) {
         let scale = 32.0;
         let mut x_start = x;
