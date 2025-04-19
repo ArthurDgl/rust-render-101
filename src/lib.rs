@@ -8,289 +8,11 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
+pub mod geometry;
+pub mod color;
+pub mod transition;
+
 const DEFAULT_NAME: &str = "Rust Render 101 Sketch";
-
-pub enum StrokeMode {
-    Circle,
-    Square,
-    Custom(fn(i8) -> Vec<(i8, i8)>),
-}
-
-pub enum FontMode {
-    TimesNewRoman,
-    Arial,
-    Custom {file_path: String},
-}
-
-pub enum ShapeType {
-    Polygon,
-    LinearSpline { loops: bool },
-    CubicBezierSpline { loops: bool },
-}
-
-pub struct RgbaColor {}
-
-impl RgbaColor {
-    /// Creates random opaque rgb color
-    pub fn random_rgb_color() -> u32 {
-        let mask: u32 = !(255u32 << 24);
-
-        mask & rand::random::<u32>()
-    }
-
-    /// Creates random rgba color
-    /// (can be transparent, see RgbaColor::random_rgb_color() for opaque colors)
-    pub fn random_rgba_color() -> u32 {
-        rand::random::<u32>()
-    }
-
-    /// Creates rgba value based on greyscale u8 value
-    pub fn greyscale_color(g: u8) -> u32 {
-        255u32 << 24 | ((g as u32) << 16) | ((g as u32) << 8) | g as u32
-    }
-
-    /// Creates rgba value based on 3 rgb u8 values
-    pub fn rgb_color(r: u8, g: u8, b: u8) -> u32 {
-        255u32 << 24 | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
-    }
-
-    /// Creates rgba value based on 4 u8 values
-    pub fn argb_color(a: u8, r: u8, g: u8, b: u8) -> u32 {
-        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
-    }
-
-    /// Extracts alpha channel as u8 from u32 color
-    pub fn color_alpha(color: u32) -> u8 {
-        (color >> 24) as u8
-    }
-
-    /// Extracts red channel as u8 from u32 color
-    pub fn color_red(color: u32) -> u8 {
-        (color >> 16) as u8
-    }
-
-    /// Extracts green channel as u8 from u32 color
-    pub fn color_green(color: u32) -> u8 {
-        (color >> 8) as u8
-    }
-
-    /// Extracts blue channel as u8 from u32 color
-    pub fn color_blue(color: u32) -> u8 {
-        color as u8
-    }
-
-    /// Converts a u32 color to a tuple of 4 f32's between 0 and 1
-    fn color_u32_to_4xf32(color: u32) -> (f32, f32, f32, f32) {
-        (
-            RgbaColor::color_alpha(color) as f32 / 255f32,
-            RgbaColor::color_red(color) as f32 / 255f32,
-            RgbaColor::color_green(color) as f32 / 255f32,
-            RgbaColor::color_blue(color) as f32 / 255f32,
-        )
-    }
-
-    /// Converts a tuple of 4 f32's to a u32 color
-    fn color_4xf32_to_u32(color: (f32, f32, f32, f32)) -> u32 {
-        RgbaColor::argb_color(
-            (color.0 * 255f32) as u8,
-            (color.1 * 255f32) as u8,
-            (color.2 * 255f32) as u8,
-            (color.3 * 255f32) as u8,
-        )
-    }
-
-    /// Performs the alpha compose operation in the alpha channels
-    fn alpha_compose_alpha(p_a: f32, q_a: f32) -> f32 {
-        p_a + q_a - p_a * q_a
-    }
-
-    /// Performs the alpha compose operation on the color channels
-    fn alpha_compose_channel(p_a: f32, p_c: f32, q_a: f32, q_c: f32, r_a: f32) -> f32 {
-        (p_c * p_a + q_c * q_a - p_c * p_a * q_a) / r_a
-    }
-
-    /// Entire pipeline of composing 2 u32 colors using alpha compose operation
-    fn color_alpha_compose_color(color_p: u32, color_q: u32) -> u32 {
-        let (p_a, p_r, p_g, p_b) = RgbaColor::color_u32_to_4xf32(color_p);
-        let (q_a, q_r, q_g, q_b) = RgbaColor::color_u32_to_4xf32(color_q);
-
-        let result_a = RgbaColor::alpha_compose_alpha(p_a, q_a);
-        if result_a <= 0.0001f32 {
-            return RgbaColor::argb_color(0, 0, 0, 0);
-        }
-
-        let (result_r, result_g, result_b) = (
-            RgbaColor::alpha_compose_channel(p_a, p_r, q_a, q_r, result_a),
-            RgbaColor::alpha_compose_channel(p_a, p_g, q_a, q_g, result_a),
-            RgbaColor::alpha_compose_channel(p_a, p_b, q_a, q_b, result_a),
-        );
-
-        RgbaColor::color_4xf32_to_u32((result_a, result_r, result_g, result_b))
-    }
-}
-
-pub enum EasingType {
-    Linear,
-    SmoothStep,
-    QuadIn,
-    QuadOut,
-}
-
-impl EasingType {
-    /// Easing functions [0, 1] -> [0, 1], assumes linear input
-    fn ease(&self, t: f32) -> f32 {
-        match self {
-            EasingType::Linear => t,
-            EasingType::SmoothStep => {
-                let t2 = t * t;
-                -2f32 * t2 * t + 3f32 * t2
-            }
-            EasingType::QuadIn => t * t,
-            EasingType::QuadOut => -t * t + 2f32 * t,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum TransitionTarget {
-    Points { points: Vec<(i32, i32)> },
-    Point { point: (i32, i32) },
-}
-impl TransitionTarget {
-    /// Performs interpolation, after easing function
-    fn interpolate(t: f32, start: &Self, end: &Self) -> Self {
-        match (start, end) {
-            (
-                TransitionTarget::Points { points: start_points },
-                TransitionTarget::Points { points: end_points },
-            ) => {
-                let new_points = start_points
-                    .iter()
-                    .zip(end_points.iter())
-                    .map(|(&(sx, sy), &(ex, ey))| {
-                        (
-                            (sx as f32 * (1f32 - t) + ex as f32 * t) as i32,
-                            (sy as f32 * (1f32 - t) + ey as f32 * t) as i32,
-                        )
-                    })
-                    .collect();
-
-                TransitionTarget::Points { points: new_points }
-            }
-            (
-                TransitionTarget::Point { point: start_point },
-                TransitionTarget::Point { point: end_point },
-            ) => TransitionTarget::Point {
-                point: (
-                    (start_point.0 as f32 * (1f32 - t) + end_point.0 as f32 * t) as i32,
-                    (start_point.1 as f32 * (1f32 - t) + end_point.1 as f32 * t) as i32,
-                ),
-            },
-            _ => {
-                panic!("Error: 'start' and 'end' parameters must be the same TransitionTarget type!")
-            }
-        }
-    }
-}
-
-pub struct Transition {
-    duration: f32,
-    elapsed: f32,
-    easing: EasingType,
-    start_state: TransitionTarget,
-    end_state: TransitionTarget,
-    current_state: TransitionTarget,
-}
-
-impl Transition {
-    /// Creates a transition
-    pub fn initialize(
-        easing: EasingType,
-        duration: f32,
-        start_state: TransitionTarget,
-        end_state: TransitionTarget,
-    ) -> Self {
-        let current_state = start_state.clone();
-        Transition {
-            easing,
-            duration,
-            elapsed: 0.0,
-            start_state,
-            end_state,
-            current_state,
-        }
-    }
-
-    /// Main access point for the Transition : updates the progress based on delta time
-    pub fn step(&mut self, delta_time: f32) {
-        self.elapsed += delta_time;
-        let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
-        let eased_t = self.easing.ease(t);
-        self.current_state =
-            TransitionTarget::interpolate(eased_t, &self.start_state, &self.end_state);
-    }
-
-    /// Returns true if the Transition is finished (elapsed time reached duration)
-    pub fn is_finished(&self) -> bool {
-        self.elapsed >= self.duration
-    }
-
-    /// Resets elpased time to 0
-    pub fn reset(&mut self) {
-        self.elapsed = 0.0;
-    }
-
-    /// Resets Transition and changes start and end targets
-    pub fn reset_new(&mut self, new_start: TransitionTarget, new_end: TransitionTarget) {
-        self.reset();
-
-        self.start_state = new_start;
-        self.end_state = new_end;
-    }
-
-    /// Returns the current state if target is points vec
-    pub fn get_current_points(&self) -> &Vec<(i32, i32)> {
-        match &self.current_state {
-            TransitionTarget::Points { points } => { points }
-            _ => {panic!("Error: called get_points() on transition with non-points target !")}
-        }
-    }
-
-    /// Returns the start state if target is points vec
-    pub fn get_start_points(&self) -> &Vec<(i32, i32)> {
-        match &self.start_state {
-            TransitionTarget::Points { points } => { points }
-            _ => {panic!("Error: called get_points() on transition with non-points target !")}
-        }
-    }
-
-    /// Returns the end state if target is points vec
-    pub fn get_end_points(&self) -> &Vec<(i32, i32)> {
-        match &self.end_state {
-            TransitionTarget::Points { points } => { points }
-            _ => {panic!("Error: called get_points() on transition with non-points target !")}
-        }
-    }
-
-    /// Returns current state if target is single point
-    pub fn get_current_point(&self) -> &(i32, i32) {
-        match &self.current_state {
-            TransitionTarget::Point { point } => { point }
-            _ => {panic!("Error: called get_point() on transition with non-point target !")}
-        }
-    }
-}
-
-
-
-pub struct Geometry {}
-
-impl Geometry {
-    /// Creates a random f32 value between lower and upper bounds
-    pub fn random(lower: f32, upper: f32) -> f32 {
-        lower + rand::random::<f32>() * (upper - lower)
-    }
-}
 
 pub trait State : Default {}
 
@@ -313,11 +35,11 @@ pub struct Sketch<S: State> {
     fill_color: Option<u32>,
     stroke_color: Option<u32>,
     stroke_weight: i8,
-    stroke_mode: StrokeMode,
+    stroke_mode: geometry::StrokeMode,
 
     shape_vertices: Vec<(i32, i32)>,
     shape_holes: Vec<usize>,
-    shape_type: ShapeType,
+    shape_type: geometry::ShapeType,
 
     pub draw_method: Option<fn(&mut Self)>,
     pub setup_method: Option<fn(&mut Self)>,
@@ -358,10 +80,10 @@ impl<S: State> Sketch<S> {
             fill_color: Some(0),
             stroke_color: Some(0),
             stroke_weight: 1,
-            stroke_mode: StrokeMode::Circle,
+            stroke_mode: geometry::StrokeMode::Circle,
             shape_vertices: Vec::new(),
             shape_holes: Vec::new(),
-            shape_type: ShapeType::Polygon,
+            shape_type: geometry::ShapeType::Polygon,
 
             draw_method: None,
             setup_method: None,
@@ -482,9 +204,9 @@ impl<S: State> Sketch<S> {
     /// Generates a mask based on current stroke mode
     fn generate_mask(&self) -> Vec<(i8, i8)> {
         match self.stroke_mode {
-            StrokeMode::Circle => self.generate_circular_mask(),
-            StrokeMode::Square => self.generate_square_mask(),
-            StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
+            geometry::StrokeMode::Circle => self.generate_circular_mask(),
+            geometry::StrokeMode::Square => self.generate_square_mask(),
+            geometry::StrokeMode::Custom(mask_func) => mask_func(self.stroke_weight),
         }
     }
 
@@ -765,7 +487,7 @@ impl<S: State> Sketch<S> {
 
         let (x, y) = (x as u32, y as u32);
 
-        if RgbaColor::color_alpha(color) == 255 {
+        if color::RgbaColor::color_alpha(color) == 255 {
             self.set_pixel(x, y, color);
         }
         else {
@@ -782,7 +504,7 @@ impl<S: State> Sketch<S> {
     /// Changes the color of a pixel using alpha compose with previous color
     fn mix_pixel(&mut self, x: u32, y: u32, color: u32) {
         let index = x as usize + y as usize * self.width;
-        let new_color = RgbaColor::color_alpha_compose_color(self.pixels[index], color);
+        let new_color = color::RgbaColor::color_alpha_compose_color(self.pixels[index], color);
         self.pixels[index] = new_color;
     }
 
@@ -912,8 +634,8 @@ impl<S: State> Sketch<S> {
         self.stroke_weight = weight;
     }
 
-    /// Changes the current stroke mode, see StrokeMode
-    pub fn stroke_mode(&mut self, mode: StrokeMode) {
+    /// Changes the current stroke mode, see geometry::StrokeMode
+    pub fn stroke_mode(&mut self, mode: geometry::StrokeMode) {
         self.stroke_mode = mode;
     }
 
@@ -974,7 +696,7 @@ impl<S: State> Sketch<S> {
         for x in 0..self.width as u32 {
             for y in 0..self.height as u32 {
                 let pixel: u32 = self.pixels[x as usize + y as usize * self.width];
-                image.put_pixel(x, y, Rgb([RgbaColor::color_red(pixel), RgbaColor::color_green(pixel), RgbaColor::color_blue(pixel)]));
+                image.put_pixel(x, y, Rgb([color::RgbaColor::color_red(pixel), color::RgbaColor::color_green(pixel), color::RgbaColor::color_blue(pixel)]));
             }
         }
 
@@ -991,7 +713,7 @@ impl<S: State> Sketch<S> {
                 if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
 
                 let (r, g, b, a) = image_buffer.get_pixel(i, j).channels4();
-                self.change_pixel(px, py, RgbaColor::argb_color(a, r, g, b));
+                self.change_pixel(px, py, color::RgbaColor::argb_color(a, r, g, b));
             }
         }
     }
@@ -1003,7 +725,7 @@ impl<S: State> Sketch<S> {
     }
 
     /// Indicates the start of a shape construction
-    pub fn begin_shape(&mut self, shape_type: ShapeType) {
+    pub fn begin_shape(&mut self, shape_type: geometry::ShapeType) {
         self.shape_type = shape_type;
         self.shape_vertices.clear();
         self.shape_holes.clear();
@@ -1022,28 +744,28 @@ impl<S: State> Sketch<S> {
     /// Indicate the end of the current shape construction and render constructed shape
     pub fn end_shape(&mut self) {
         match self.shape_type {
-            ShapeType::Polygon => {
+            geometry::ShapeType::Polygon => {
                 self.polygon();
             }
-            ShapeType::LinearSpline {loops} => {
+            geometry::ShapeType::LinearSpline {loops} => {
                 self.linear_spline(loops);
             }
-            ShapeType::CubicBezierSpline {loops} => {
+            geometry::ShapeType::CubicBezierSpline {loops} => {
                 todo!()
             }
         }
     }
 
     /// Changes the current font
-    pub fn font(&mut self, font: FontMode) {
+    pub fn font(&mut self, font: geometry::FontMode) {
         match font {
-            FontMode::TimesNewRoman => {
+            geometry::FontMode::TimesNewRoman => {
                 self.font_index = 0;
             }
-            FontMode::Arial => {
+            geometry::FontMode::Arial => {
                 self.font_index = 1;
             }
-            FontMode::Custom { file_path } => {
+            geometry::FontMode::Custom { file_path } => {
                 let mut i = 0usize;
                 let fonts = &self.loaded_fonts;
                 for (_, fp) in fonts {
@@ -1069,11 +791,11 @@ impl<S: State> Sketch<S> {
                 let (px, py) = (x_start + metrics.xmin + i as i32, y_start + j as i32 - metrics.height as i32 - metrics.ymin);
                 if px < 0 || py < 0 || px as usize >= self.width || py as usize >= self.height {continue;}
 
-                let color_to_mix = RgbaColor::argb_color(
+                let color_to_mix = color::RgbaColor::argb_color(
                     pixels[index],
-                    RgbaColor::color_red(self.fill_color.unwrap()),
-                    RgbaColor::color_green(self.fill_color.unwrap()),
-                    RgbaColor::color_blue(self.fill_color.unwrap()),
+                    color::RgbaColor::color_red(self.fill_color.unwrap()),
+                    color::RgbaColor::color_green(self.fill_color.unwrap()),
+                    color::RgbaColor::color_blue(self.fill_color.unwrap()),
                 );
 
                 self.mix_pixel(px as u32, py as u32, color_to_mix);
@@ -1108,7 +830,7 @@ mod tests {
 
     #[derive(Default)]
     struct MyState {
-        transition: Option<Transition>,
+        transition: Option<transition::Transition>,
     }
 
     impl State for MyState {}
@@ -1130,18 +852,18 @@ mod tests {
         end.push((500, 250));
         end.push((450, 250));
 
-        let transition = Transition::initialize(
-            EasingType::SmoothStep,
+        let transition = transition::Transition::initialize(
+            transition::EasingType::SmoothStep,
             3f32,
-            TransitionTarget::Points {points: start},
-            TransitionTarget::Points {points: end},
+            transition::TransitionTarget::Points {points: start},
+            transition::TransitionTarget::Points {points: end},
         );
 
         sketch.state.transition = Some(transition);
 
-        sketch.stroke(RgbaColor::greyscale_color(255));
+        sketch.stroke(color::RgbaColor::greyscale_color(255));
         sketch.stroke_weight(2);
-        sketch.stroke_mode(StrokeMode::Circle);
+        sketch.stroke_mode(geometry::StrokeMode::Circle);
     }
 
     fn draw(sketch: &mut Sketch<MyState>) {
@@ -1149,11 +871,11 @@ mod tests {
             println!("FIRST DRAW CALL");
         }
 
-        sketch.background(RgbaColor::greyscale_color(50));
+        sketch.background(color::RgbaColor::greyscale_color(50));
 
 
         if let Some(mut transition) = sketch.state.transition.take() {
-            sketch.begin_shape(ShapeType::LinearSpline {loops: false});
+            sketch.begin_shape(geometry::ShapeType::LinearSpline {loops: false});
             let points = transition.get_current_points();
             for &(x, y) in points {
                 sketch.vertex(x, y);
@@ -1167,22 +889,23 @@ mod tests {
         }
 
 
-        // sketch.fill(RgbaColor::argb_color(255, 255, 20, 20));
+        // sketch.fill(color::RgbaColor::argb_color(255, 255, 20, 20));
         // sketch.rect(100, 100, 200, 50);
         //
-        // sketch.fill(RgbaColor::greyscale_color(255));
+        // sketch.fill(color::RgbaColor::greyscale_color(255));
         //
-        sketch.font(FontMode::TimesNewRoman);
+        sketch.font(geometry::FontMode::TimesNewRoman);
+        sketch.fill(color::RgbaColor::greyscale_color(200));
         let fps =  ((1f32 / sketch.delta_time * 100f32) as u32) as f32 / 100f32;
         sketch.text(format!("FPS : {}", fps).as_str(), 50, 50);
 
 
 
-        // sketch.stroke(RgbaColor::greyscale_color(255));
+        // sketch.stroke(color::RgbaColor::greyscale_color(255));
         // sketch.stroke_weight(3);
         // sketch.fill(0);
         //
-        // sketch.begin_shape(ShapeType::Polygon);
+        // sketch.begin_shape(geometry::ShapeType::Polygon);
         // {
         //     for i in 0..10 {
         //         let angle: f32 = std::f32::consts::PI / 5f32  * i as f32;
